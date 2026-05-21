@@ -42,7 +42,7 @@ for pkg in $MANDATORY_PKGS; do
     fi
 done
 
-# Start applying tweaks
+# Start prepping the system and applying tweaks
 
 if [ -f "/usr/lib/libexec/baloorunner" ]; then
     echo "Disabling Baloo..."
@@ -51,3 +51,17 @@ if [ -f "/usr/lib/libexec/baloorunner" ]; then
     pkill baloo || true
     chmod -x /usr/lib/libexec/baloorunner
 fi
+
+# Zram and KSM config
+
+# Big Little Affinity/core pinning
+
+# waydroid setup
+
+# MicroG for waydroid
+
+# KDE config
+
+# User Customization
+
+# OS Branding (Switching Postmarket OS Identifiers with Alloy OS Identifiers but with credit)
