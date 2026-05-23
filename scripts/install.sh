@@ -1,13 +1,16 @@
 #!/bin/sh
-# bootstrap only
-apk add bash 2>/dev/null
-exec bash "$0" "$@"
+if [ -z "$ALLOY_BOOTSTRAPPED" ]; then
+    apk add bash 2>/dev/null
+    export ALLOY_BOOTSTRAPPED=1
+    exec bash "$0" "$@"
+fi
 
 #!/usr/bin/env bash
 # Alloy OS Installer
 # Usage: sudo ./install.sh
 
 set -euo pipefail
+trap 'echo "Error at line $LINENO, exiting."; exit 1' ERR
 
 # Variables:
 MANDATORY_PKGS="plasma-desktop plasma-wayland-protocols imagemagick jq fastfetch zstd util-linux waydroid lxc zram-init"
