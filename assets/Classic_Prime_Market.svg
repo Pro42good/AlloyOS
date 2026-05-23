@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" xmlns:bx="https://boxy-svg.com">
+  <g transform="matrix(-1, 0, 0, -1, 100.116364, 86.620903)">
+    <polygon points="29.7,17.5 25.9,27.8 15.0,26.0 0.0,0.0 65.0,0.0 58.0,8.5 65.0,17.0 29.8,17.0" style="fill: rgb(236, 196, 27);"/>
+    <g transform="translate(100,0) rotate(120) ">
+      <polygon points="29.7,17.5 25.9,27.8 15.0,26.0 0.0,0.0 65.0,0.0 58.0,8.5 65.0,17.0 29.8,17.0" fill="#090"/>
+    </g>
+    <g transform="translate(50,86.60254037844386) rotate(240) ">
+      <polygon points="29.7,17.5 25.9,27.8 15.0,26.0 0.0,0.0 65.0,0.0 58.0,8.5 65.0,17.0 29.8,17.0" style="fill: rgb(255, 59, 59);"/>
+    </g>
+    <path d="M -50.116 -44.978 L -37.349 -21.363 L -62.884 -21.363 L -50.116 -44.978 Z" bx:shape="triangle -62.884 -44.978 25.535 23.615 0.5 0 1@7596b37a" style="stroke-width: 0; stroke-dashoffset: -5px; stroke: rgb(16, 141, 214); fill: rgb(59, 187, 218);" transform="matrix(-1, 0, 0, -1, 0, 0)"/>
+  </g>
+</svg>
