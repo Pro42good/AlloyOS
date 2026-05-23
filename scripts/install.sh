@@ -9,7 +9,7 @@ fi
 # Alloy OS Installer
 # Usage: sudo ./install.sh
 
-set -euo pipefail
+set -eo pipefail
 trap 'echo "Error at line $LINENO, exiting."; exit 1' ERR
 
 # Variables:
