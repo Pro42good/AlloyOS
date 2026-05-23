@@ -1,3 +1,8 @@
+#!/bin/sh
+# bootstrap only
+apk add bash 2>/dev/null
+exec bash "$0" "$@"
+
 #!/usr/bin/env bash
 # Alloy OS Installer
 # Usage: sudo ./install.sh
