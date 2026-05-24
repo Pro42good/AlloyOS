@@ -15,3 +15,28 @@
 [![RAM](https://img.shields.io/badge/RAM-~900MB_vs_Google_3--4GB-yellow?style=flat-square)](https://github.com/Pro42good/AlloyOS)
 
 </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div align="center">
+
+<br>
+
+```
+
+
+```
+
+</div>
