@@ -2,6 +2,11 @@
 
 The image asset `wallpaper_default.jpg` contained in this repository is licensed under the Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License. 
 
+### Asset Information & Attribution
+* **Title of Work:** [Orotava Valley Vista and TF-5 Highway, Tenerife.](https://github.com/Pro42good/AlloyOS/blob/main/assets/wallpaper_default.jpg)
+* **Creator:** [Pro42good](https://github.com/Pro42good)
+* **Year of Creation:** 2025
+
 For the full legal terms, please see the license text below. For any code elements in this repository, please refer to the primary `LICENSE` file.
 
 ---
