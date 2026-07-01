@@ -1,6 +1,6 @@
 # Asset Licensing Notice
 
-The image asset `wallpaper_default.jpg` contained in this repository is a derivative work licensed under the Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0) License. 
+The image asset `Classic_Prime_Market.svg` contained in this repository is a derivative work licensed under the Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0) License. 
 
 This asset is modified from the original postmarketOS logo, which is authored by the postmarketOS project and originally distributed under the CC BY-SA 3.0 license (source files available via [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:PostmarketOS_logo.svg) and [GitHub](https://raw.githubusercontent.com/postmarketOS/artwork/master/logo/logo.svg)). 
 
