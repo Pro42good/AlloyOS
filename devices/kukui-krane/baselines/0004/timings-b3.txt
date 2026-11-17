@@ -1,0 +1,3 @@
+t0_spawn=1788896610.865
+t1_ssh_ready=1788896623.268
+boot_seconds=12.4

@@ -1,0 +1,11 @@
+# VM images stay out of git (GitHub 100 MB file limit). Artifacts live in the
+# device package's Drive/local storage; hashes are committed as manifests.
+*.qcow2
+*.raw
+*.img
+*.img.xz
+*.iso
+*.fd
+*.log
+.DS_Store
+out/

@@ -1,0 +1,24 @@
+#!/usr/bin/expect -f
+# ssh helper for first contact with a fresh image.
+# SECURITY_AUDIT HIGH-2: password comes from PMOS_PASS env (never argv, never
+# a pipe); host key is pinned against alloy/known_hosts (StrictHostKeyChecking
+# =yes). Handles both the ssh login password prompt and an in-session sudo
+# password prompt.
+# Usage: PMOS_PASS=... ssh-run.exp <port> <user> <command...>
+set timeout 60
+set port [lindex $argv 0]
+set user [lindex $argv 1]
+set cmd [join [lrange $argv 2 end] " "]
+if {![info exists env(PMOS_PASS)]} {
+    puts stderr "PMOS_PASS not set"
+    exit 2
+}
+set pass $env(PMOS_PASS)
+set kh [file normalize "[file dirname [info script]]/../../alloy/known_hosts"]
+spawn ssh -t -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$kh -o LogLevel=ERROR -p $port $user@127.0.0.1 $cmd
+expect {
+    -nocase "password:" { send "$pass\r"; exp_continue }
+    eof
+}
+catch wait result
+exit [lindex $result 3]

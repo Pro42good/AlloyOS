@@ -1,0 +1,18 @@
+# Disk images stay out of git — their hashes are the provenance:
+#   baselines/0007/FROZEN.sha256            (frozen CORE, 698 MiB)
+#   baselines/0007/FROZEN-GUI0000.sha256    (frozen ALLOY-GUI-0000, 2.2 GiB)
+#   alloy/core/*.qcow2                      (rebuilt Core, 604 MiB compressed)
+images/*.qcow2
+images/*.raw
+images/*.img
+images/*.iso
+baselines/**/*.qcow2
+baselines/**/vars.fd
+alloy/**/*.qcow2
+alloy/build/
+*.pid
+.DS_Store
+images/*.img.xz
+images/vmlinuz
+images/initramfs
+images/firmware/

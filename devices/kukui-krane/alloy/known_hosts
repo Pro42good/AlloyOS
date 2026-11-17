@@ -1,0 +1,25 @@
+# ALLOY pinned SSH host keys — generated 2026-09-09 from the local VM
+# (alloy-dev-0001 lineage; all Core-derived artifacts share the same
+# /etc/ssh host keys from the pmbootstrap rootfs).
+# TOFU pin: verify once against the image you built, then trust the file.
+# SECURITY_AUDIT HIGH-2 remediation.
+# Recorded fingerprints (SECURITY_AUDIT2 INFO-2):
+  3072 SHA256:hdBCJSyrW43Uko35nsl0yomlhSSnmUSTa+56Slte0dE [127.0.0.1]:2222 (RSA)
+  256 SHA256:Rktybf7ljsAUuWyc/SDA8ckPytduOOjB9qSawo5DK9A [127.0.0.1]:2222 (ED25519)
+  256 SHA256:dww/sYSwoh8wktd9sdvD939ictgS2qq984q8nRcT9Ss [127.0.0.1]:2222 (ECDSA)
+# Re-pinning ceremony: never blind-keyscan; boot the image, ssh-keyscan to a
+# temp file, review `ssh-keygen -l`, then atomically replace entries for
+# [127.0.0.1]:2222 (see alloy/build-core.sh).
+# 127.0.0.1:2222 SSH-2.0-OpenSSH_10.5
+# 127.0.0.1:2222 SSH-2.0-OpenSSH_10.5
+# 127.0.0.1:2222 SSH-2.0-OpenSSH_10.5
+# 127.0.0.1:2222 SSH-2.0-OpenSSH_10.5
+# 127.0.0.1:2222 SSH-2.0-OpenSSH_10.5
+# 127.0.0.1:2222 SSH-2.0-OpenSSH_10.6
+[127.0.0.1]:2222 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDDD7Jciv4FxhoXb7hFgZHLGXmnbIejEnKPNPAOyEcbPT7sGIdxynn0FtUuJBes6jU/szBJbMlDvro87JpMinPjURDQVQVglSkKprOE5XGJ5kXhJwlDVI/3DhC7kDbcHpFwFwDHzQ/70MhOB3vv+DtsFx5vWtn+FgRx+kW/bAo2AqSP1XGhWm2UQQt6PogMZdSYDybahSOAxrqyBcT64PBgAYNx17ZIFeyBDwcMj1lTtRu6RDO9MttsO91E6jrK6BjlTZHIdGY+gbQqDuzsmtbjteb1ROwvFPjdsBVTg134zg4/IEAgQoLNTsAkNlmbmWOjr8eEW8Kpgzw2Ry0dN7MQTT9m2ARvhqSnUEubWaorhpax32ogv31r2XxJ6NQwxIED3bEhOE4+Q8mEPL9+s2OhO4JywsvVPWruj5xOlTI1gVIi4Q7jXc+YJpVW0ACYCU14Bviqtevp2T+WFQEZg8x67BDHJF/VPzfYE2DAbKNcKpU4PPn29z/Frb5hYuAnwHE=
+# 127.0.0.1:2222 SSH-2.0-OpenSSH_10.6
+# 127.0.0.1:2222 SSH-2.0-OpenSSH_10.6
+# 127.0.0.1:2222 SSH-2.0-OpenSSH_10.6
+[127.0.0.1]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFx9TnVrdUyuDBH9i43S0iJ88hFBZF4+QLt6/Nc5La/y
+# 127.0.0.1:2222 SSH-2.0-OpenSSH_10.6
+[127.0.0.1]:2222 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBNlVqrR8wiUT2Spgl1kTrTNLagoprZ2uCFcyCc9bfSQUofm/qg+KFCIr2rE1EulaDUYaCqst3mrGocku5Gj19ZA=
