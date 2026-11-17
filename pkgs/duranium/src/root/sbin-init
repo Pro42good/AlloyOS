@@ -1,0 +1,72 @@
+#!/bin/sh
+# Minimal fixture/Alloy slot init for Duranium V1.
+#
+# The real Alloy Core adapter uses systemd units instead (see
+# contrib/alloy-core/). This script is used by the deterministic QEMU fixture
+# and is intentionally small: it records the boot, reconciles metadata, runs
+# state migrations, signals core readiness, and starts the test agent or shell.
+
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export DURANIUM_LIBDIR=/usr/lib/duranium
+export DURANIUM_CONFIG=/etc/duranium/duranium.conf
+
+# The initramfs environment is inherited across switch_root. Reset the paths
+# that changed meaning and let the runtime config resolve devices by label.
+export DURANIUM_BOOT_MNT=/boot
+export DURANIUM_STATE_MNT=/state
+export DURANIUM_RECOVERY_MNT=/recovery
+export DURANIUM_NEWROOT=/sysroot
+export DURANIUM_TMP=/run/duranium/tmp.$$
+unset DURANIUM_INITRAMFS DURANIUM_BOOT_DEV DURANIUM_SLOT_A_DEV DURANIUM_SLOT_B_DEV \
+    DURANIUM_STATE_DEV DURANIUM_RECOVERY_DEV DURANIUM_META_DIR DURANIUM_ENTRIES_DIR \
+    DURANIUM_BOOT_FILES_DIR DURANIUM_RECOVERY_ROOT DURANIUM_ARCH DURANIUM_PROFILE \
+    DURANIUM_HARDWARE_TARGET DURANIUM_STATE_SCHEMA 2>/dev/null || true
+
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sys /sys 2>/dev/null || true
+mount -t devtmpfs dev /dev 2>/dev/null || true
+mkdir -p /run /tmp /var/tmp
+grep -q ' /run ' /proc/mounts || mount -t tmpfs -o mode=755,nosuid,nodev tmpfs /run 2>/dev/null || true
+grep -q ' /tmp ' /proc/mounts || mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /tmp 2>/dev/null || true
+grep -q ' /var/tmp ' /proc/mounts || mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /var/tmp 2>/dev/null || true
+mkdir -p /run/alloy /run/duranium
+
+_slot=$(sed -n 's/^slot=//p' /run/duranium/boot.env 2>/dev/null | head -n 1)
+if [ -z "$_slot" ]; then
+    for _w in $(cat /proc/cmdline 2>/dev/null); do
+        case "$_w" in
+            duranium.slot=*) _slot=${_w#*=} ;;
+        esac
+    done
+fi
+if [ -n "$_slot" ] && [ ! -r /run/duranium/boot.env ]; then
+    /usr/bin/duranium boot-record "$_slot" || {
+        printf 'DURANIUM_BOOT_RECORD_FAILED\n' >&2
+        reboot -f 2>/dev/null || poweroff -f 2>/dev/null || true
+    }
+fi
+
+_img_slot=$(cat /etc/duranium/slot 2>/dev/null || true)
+if [ -n "$_slot" ] && [ -n "$_img_slot" ] && [ "$_slot" != "$_img_slot" ]; then
+    printf 'DURANIUM_SLOT_MISMATCH initramfs=%s rootfs=%s\n' "$_slot" "$_img_slot" >&2
+    reboot -f 2>/dev/null || poweroff -f 2>/dev/null || true
+fi
+
+/usr/bin/duranium boot-reconcile || true
+
+if [ -n "$_slot" ] && grep -q ' /state ' /proc/mounts; then
+    /usr/bin/duranium state migrate "$_slot" || {
+        printf 'DURANIUM_STATE_MIGRATION_FAILED\n' >&2
+        reboot -f 2>/dev/null || poweroff -f 2>/dev/null || true
+    }
+fi
+
+touch /run/alloy/core-ready
+: > /run/alloy/service-core
+
+if [ -x /usr/local/bin/duranium-test ]; then
+    DURANIUM_TEST_MODE=1 /usr/local/bin/duranium-test
+fi
+
+printf '\nDuranium slot %s shell. Try: duranium status\n\n' "${_slot:-?}"
+exec /bin/sh

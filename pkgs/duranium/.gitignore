@@ -1,0 +1,4 @@
+qemu/out/
+tests/.tmp/
+qemu/*.log
+*.log

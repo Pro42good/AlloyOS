@@ -1,0 +1,50 @@
+#!/bin/sh
+# Duranium recovery PID 1.
+#
+# The recovery environment is independent of SYSTEM_A and SYSTEM_B. It lives
+# entirely in RECOVERY (plus its kernel/initramfs on BOOT, which UEFI must
+# read). It is CLI-only in V1.
+
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export DURANIUM_RECOVERY=1
+export DURANIUM_LIBDIR=/usr/lib/duranium
+export DURANIUM_CONFIG=/etc/duranium/duranium.conf
+
+export DURANIUM_BOOT_MNT=/boot
+export DURANIUM_STATE_MNT=/state
+export DURANIUM_RECOVERY_MNT=/recovery
+export DURANIUM_TMP=/run/duranium/tmp.$$
+unset DURANIUM_INITRAMFS DURANIUM_BOOT_DEV DURANIUM_SLOT_A_DEV DURANIUM_SLOT_B_DEV \
+    DURANIUM_STATE_DEV DURANIUM_RECOVERY_DEV DURANIUM_META_DIR DURANIUM_ENTRIES_DIR \
+    DURANIUM_BOOT_FILES_DIR DURANIUM_RECOVERY_ROOT DURANIUM_ARCH DURANIUM_PROFILE \
+    DURANIUM_HARDWARE_TARGET DURANIUM_STATE_SCHEMA 2>/dev/null || true
+
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sys /sys 2>/dev/null || true
+mount -t devtmpfs dev /dev 2>/dev/null || true
+mkdir -p /run /testdata
+mount -t tmpfs -o mode=755,nosuid,nodev tmpfs /run 2>/dev/null || true
+mkdir -p /run/duranium
+printf '1\n' > /run/duranium/recovery
+printf 'DURANIUM_RECOVERY_READY\n'
+
+# Optional test-data disk (whole-disk ext4). Production recovery does not need
+# this; it is how the automated QEMU suite supplies signed artifacts.
+if [ -b /dev/vdb ] && ! grep -q ' /testdata ' /proc/mounts; then
+    mount -t ext4 -o ro /dev/vdb /testdata 2>/dev/null || true
+fi
+
+if [ -r /testdata/.duranium-test ]; then
+    export DURANIUM_TEST_MODE=1
+    export DURANIUM_BACKEND=block
+fi
+
+/usr/bin/duranium recovery mount-state >/dev/null 2>&1 || true
+/usr/bin/duranium recovery status || true
+
+if [ -n "${DURANIUM_TEST_MODE:-}" ] && [ -x /usr/local/bin/duranium-test ]; then
+    /usr/local/bin/duranium-test recovery
+fi
+
+printf '\nDuranium recovery shell. Try: duranium recovery status\n\n'
+exec /bin/sh
