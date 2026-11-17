@@ -24,7 +24,9 @@ Duranium V1 is a proof, not a polished product. These are deliberate limits.
   systemd-boot, GPT, ext4, read-only mounts, STATE binds, and update logic.
 - A real-Core systemd overlay-root smoke test has not been completed. The
   adapter in `contrib/alloy-core/` documents the required overlay and STATE
-  bind setup, but it is not part of the green V1 suite.
+  bind setup, but it is not part of the green V1 suite. The built-in health
+  check also expects a directly read-only `/`; an overlay-root adapter must
+  disable that check and verify the lower SYSTEM mount is read-only instead.
 - The minimal STATE allowlist is `/home`, `/var/lib/alloy`, and `/etc/alloy`.
   Real Core integration will need NetworkManager connections, SSH host keys,
   Bluetooth pairings, and possibly other explicit paths, each with a migration

@@ -100,3 +100,18 @@ real Core systemd boot smoke test is a V1.1 task. The deterministic fixture
 covers the metadata, transaction, boot-counting, rollback, STATE migration, and
 recovery semantics against the real kernel, UEFI, systemd-boot, GPT, ext4, and
 read-only/bind mounts.
+
+## Overlay root and the health check
+
+The built-in V1 health check expects `/` to be mounted read-only (the fixture
+does this directly). A real Alloy Core adapter that uses an overlay root will
+see `/` as writable while the SYSTEM lower layer is read-only.
+
+For that adapter:
+
+- set `DURANIUM_HEALTH_REQUIRE_ROOT_RO=0`; and
+- add a health.d script that verifies the SYSTEM lower mount is still
+  read-only (or that the update path is using the read-only image correctly).
+
+Do not remove the underlying invariant: the active SYSTEM image must remain
+read-only even when an overlay presents a writable root.
