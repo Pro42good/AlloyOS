@@ -50,7 +50,9 @@ audio/input, SSH. No GUI.
 | Artifact | 435 MiB compressed qcow2 |
 
 Full record: `docs/ALLOY-BASELINE-1000-1001.md` (recipe deltas vs the 0007
-lineage included). Older lineage (kernel 7.2.4, Phosh ancestry):
+lineage included). **Performance record: `docs/ALLOY-PERF-1001.md`**
+(boot phases, RAM, services, IRQ breakdown, per-process wakeups, storage,
+host-side cost, and the side-by-side vs the 7.2.4 lineage). Older lineage (kernel 7.2.4, Phosh ancestry):
 `docs/ALLOY-BASELINE-000{1..7}.md`, `docs/ALLOY-PACKET-0000-to-0007.md`.
 
 ## Boot it
