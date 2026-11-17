@@ -1,0 +1,12 @@
+[Unit]
+Description=Duranium explicit mark-good after health checks
+Documentation=file:///usr/share/duranium/docs/03-BOOT-SELECTION.md
+After=multi-user.target duranium-state-migrate.service
+ConditionPathExists=/run/duranium/boot.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/duranium mark-good
+
+[Install]
+WantedBy=multi-user.target

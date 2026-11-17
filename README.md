@@ -40,3 +40,14 @@
 ```
 
 </div>
+
+---
+
+## Duranium (immutable A/B updates)
+
+Duranium V1 is the immutable system-image and A/B update foundation for Alloy
+OS. It lives in [`pkgs/duranium/`](pkgs/duranium/) and includes signed offline
+updates, explicit pending-slot confirmation, automatic rollback, separate
+persistent STATE, and an independent CLI recovery environment. See
+[`pkgs/duranium/README.md`](pkgs/duranium/README.md) for build and test
+instructions.

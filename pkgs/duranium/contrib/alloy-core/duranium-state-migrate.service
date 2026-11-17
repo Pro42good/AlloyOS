@@ -1,0 +1,14 @@
+[Unit]
+Description=Duranium persistent STATE schema migration
+After=local-fs.target duranium-boot-reconcile.service
+Before=multi-user.target
+ConditionPathIsMountPoint=/state
+ConditionPathExists=/run/duranium/boot.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/duranium state migrate
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
