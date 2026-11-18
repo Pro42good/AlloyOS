@@ -6,6 +6,7 @@
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 KH="$(cd "$(dirname "$0")" && pwd)/known_hosts"
+VARS="${VARS:-$REPO/baselines/0007/vars.fd}"
 IMG="$1"; PROFILE="${2:-core}"
 W="$(mktemp -d /var/folders/jd/vql7k8454mzg89l6vrnjh_t80000gn/T/opencode/reg.XXXXXXXX)"
 PORT=2222
@@ -14,7 +15,7 @@ SSHCM="-o ControlMaster=auto -o ControlPath=$W/cm -o ControlPersist=300"
 
 qemu-img create -f qcow2 -F qcow2 -b "$(cd "$(dirname "$IMG")" && pwd)/$(basename "$IMG")" "$W/ov.qcow2" >/dev/null
 "$REPO/scripts/run-qemu-headless.sh" "$W/ov.qcow2" "$W/serial.log" "$W/qemu.pid" "$PORT" \
-    "$REPO/baselines/0007/vars.fd"
+    "$VARS"
 UP=0; i=0
 while [ $i -lt 240 ]; do
   ssh -o BatchMode=yes -o ConnectTimeout=3 -o UserKnownHostsFile="$KH" -o StrictHostKeyChecking=yes \

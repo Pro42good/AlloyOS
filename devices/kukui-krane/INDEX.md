@@ -11,14 +11,17 @@ for QEMU and a macOS host.
 docs/                          every baseline record, packet, lineage, history,
                                operations manual, security audits
 scripts/                       QEMU runners (gui/headless/arm), pmbootstrap
-                               pipeline, image downloader (pinned sha256)
+                               base-image pipeline (`base` command), image
+                               downloader (pinned sha256)
 alloy/
   steps/                       the deterministic floor recipe
                                00-keys, 01-strip(-nura), 02-filecuts, 03-hwdb,
                                04-tuning, 05-swap, 06-modprune, 07-configs
   profiles/                    dev / prod / lab deltas
-  build-core.sh                reproducible pristine -> CORE build (8 stages)
-  build-profile.sh             CORE -> profile artifacts
+  build-core.sh                reproducible base -> floor build (8 stages,
+                               BASE=phosh|console)
+  freeze.sh                    sha256 manifest + macOS immutable flag
+  build-profile.sh             floor -> profile artifacts
   regression-test.sh           functional-integrity gate
   quiescence-test.sh           idle-behavior gate (incl. `core-nura` profile)
   keys/                        apk signing keys (public) + provenance/rotation
@@ -50,7 +53,9 @@ audio/input, SSH. No GUI.
 | Artifact | 435 MiB compressed qcow2 |
 
 Full record: `docs/ALLOY-BASELINE-1000-1001.md` (recipe deltas vs the 0007
-lineage included). **Performance record: `docs/ALLOY-PERF-1001.md`**
+lineage included). **Reproducibility audit: `docs/ALLOY-REPRODUCIBILITY.md`** (what is scripted,
+what depends on the environment, how to rebuild). **Performance record:
+`docs/ALLOY-PERF-1001.md`**
 (boot phases, RAM, services, IRQ breakdown, per-process wakeups, storage,
 host-side cost, and the side-by-side vs the 7.2.4 lineage). Older lineage (kernel 7.2.4, Phosh ancestry):
 `docs/ALLOY-BASELINE-000{1..7}.md`, `docs/ALLOY-PACKET-0000-to-0007.md`.
