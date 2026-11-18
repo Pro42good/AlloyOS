@@ -18,13 +18,16 @@ recovery_require_context() {
 }
 
 recovery_status() {
+    local _schema
     recovery_require_context || return 1
     slot_status || true
     printf '\nBoot entries:\n'
     bootloader_list || true
     printf '\nSTATE: '
     if dur_is_mounted "$DURANIUM_STATE_MNT"; then
-        printf 'mounted at %s (schema %s)\n' "$DURANIUM_STATE_MNT" "$(state_schema_get)"
+        _schema=$(state_schema_get 2>/dev/null || true)
+        [ -n "$_schema" ] || _schema=unknown
+        printf 'mounted at %s (schema %s)\n' "$DURANIUM_STATE_MNT" "$_schema"
     else
         printf 'not mounted\n'
     fi

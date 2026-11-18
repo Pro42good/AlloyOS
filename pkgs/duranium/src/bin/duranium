@@ -55,6 +55,10 @@ Usage:
   duranium mark-bad [A|B]
   duranium slot select A|B [--force]
   duranium boot-record A|B
+  duranium boot-confirm
+  duranium session-confirm
+  duranium session-crash [reason]
+  duranium boot-clean
   duranium boot-reconcile
   duranium boot-verify A|B
   duranium boot-fail A|B [reason]
@@ -149,7 +153,7 @@ cmd_state() {
     case "$_sub" in
         schema)
             state_load_config || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
-            printf '%s\n' "$(state_schema_get)"
+            state_schema_get || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
             ;;
         migrate)
             _slot=${1:-}
@@ -279,6 +283,10 @@ case "$_cmd" in
         [ -n "${1:-}" ] || { dur_err "boot-record: missing slot"; exit 1; }
         slot_boot_record "$1"
         ;;
+    boot-confirm) slot_boot_confirm "${1:-}" ;;
+    session-confirm) slot_session_confirm "${1:-}" ;;
+    session-crash) slot_session_crash "$*" ;;
+    boot-clean) slot_boot_clean ;;
     boot-reconcile) slot_reconcile ;;
     boot-verify)
         [ -n "${1:-}" ] || { dur_err "boot-verify: missing slot"; exit 1; }

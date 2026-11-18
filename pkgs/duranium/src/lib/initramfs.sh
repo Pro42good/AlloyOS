@@ -79,7 +79,7 @@ initramfs_boot_recovery() {
 }
 
 initramfs_main() {
-    local _mode _rc _slot _why
+    local _img_slot _mode _mode_file _rc _slot _why
     export PATH=/sbin:/bin:/usr/sbin:/usr/bin
     mount -t proc proc /proc 2>/dev/null || true
     mount -t sysfs sys /sys 2>/dev/null || true

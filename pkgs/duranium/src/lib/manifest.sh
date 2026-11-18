@@ -125,7 +125,9 @@ manifest_signature_verify() {
     _sigb64="$_dir/manifest.sig"
     _key="$DURANIUM_KEYS_DIR/$MF_key_id.pub"
     dur_is_safe_id "$MF_key_id" || return 1
+    [ -f "$_manifest" ] && [ ! -L "$_manifest" ] || { DURANIUM_LAST_ERROR="missing manifest.txt"; return 1; }
     [ -r "$_manifest" ] || { DURANIUM_LAST_ERROR="missing manifest.txt"; return 1; }
+    [ -f "$_sigb64" ] && [ ! -L "$_sigb64" ] || { DURANIUM_LAST_ERROR="missing manifest.sig"; return 1; }
     [ -r "$_sigb64" ] || { DURANIUM_LAST_ERROR="missing manifest.sig"; return 1; }
     [ -r "$_key" ] || { DURANIUM_LAST_ERROR="untrusted signing key: $MF_key_id"; return 1; }
     _sig="$DURANIUM_TMP/manifest.sig.$$"

@@ -54,34 +54,58 @@ update_check_hardware() {
 }
 
 update_check_state_schema() {
-    local _current
-    _current=0
+    local _current _recovery
+    _recovery=${1:-0}
     if dur_is_mounted "$DURANIUM_STATE_MNT" || [ "$DURANIUM_BACKEND" = "dir" ]; then
-        _current=$(state_schema_get)
-    fi
-    [ -n "$_current" ] || _current=0
-    if [ "$_current" -gt 0 ] && [ "$MF_state_schema_required" -lt "$_current" ]; then
-        DURANIUM_LAST_ERROR="state downgrade rejected: STATE is schema $_current, artifact requires $MF_state_schema_required"
-        return 1
-    fi
-    if [ "$MF_state_schema_required" -gt "$_current" ]; then
-        # A rollback slot is expected to remain available. Only additive,
-        # backward-compatible migrations are allowed in that situation.
-        if [ "$MF_state_schema_backward_compatible" != "1" ] || [ "$MF_rollback_compatible" != "1" ]; then
-            DURANIUM_LAST_ERROR="artifact requires state schema $MF_state_schema_required but migration is not rollback-safe"
+        _current=$(state_schema_get) || {
+            DURANIUM_LAST_ERROR="cannot read STATE schema: $DURANIUM_LAST_ERROR"
             return 1
+        }
+        [ -n "$_current" ] || _current=0
+        if [ "$_current" = "0" ]; then
+            # A missing schema marker is not the same as a fresh STATE: if
+            # the tree already holds data, the marker was lost (partial
+            # factory reset, backup restore) and the layout is unknown.
+            state_load_config 2>/dev/null || true
+            if ! state_tree_is_empty; then
+                DURANIUM_LAST_ERROR="STATE schema marker is missing but STATE has data"
+                return 1
+            fi
+        fi
+        if [ "$_current" -gt 0 ] && [ "$MF_state_schema_required" -lt "$_current" ]; then
+            if [ "$_recovery" = "1" ]; then
+                # Recovery reinstalls may target an older build. The runtime
+                # tolerates a newer STATE schema on rollback (additive
+                # migrations only), so this downgrades the artifact, not STATE.
+                dur_warn "recovery reinstall: artifact requires schema $MF_state_schema_required, STATE is $_current"
+            else
+                DURANIUM_LAST_ERROR="state downgrade rejected: STATE is schema $_current, artifact requires $MF_state_schema_required"
+                return 1
+            fi
+        fi
+        if [ "$MF_state_schema_required" -gt "$_current" ]; then
+            # A rollback slot is expected to remain available. Only additive,
+            # backward-compatible migrations are allowed in that situation.
+            if [ "$MF_state_schema_backward_compatible" != "1" ] || [ "$MF_rollback_compatible" != "1" ]; then
+                DURANIUM_LAST_ERROR="artifact requires state schema $MF_state_schema_required but migration is not rollback-safe"
+                return 1
+            fi
         fi
     fi
+    # STATE is not mounted (recovery before mount-state): the installed
+    # schema is unknowable, so make no comparison. The installed slot is
+    # gated again by state_migrate at boot.
     return 0
 }
 
 update_verify_compatibility() {
-    local _allow
+    local _allow _recovery
     _allow=${1:-0}
+    _recovery=${2:-0}
     update_check_profile "$_allow" || return 1
     update_check_architecture || return 1
     update_check_hardware || return 1
-    update_check_state_schema || return 1
+    update_check_state_schema "$_recovery" || return 1
     return 0
 }
 
@@ -96,23 +120,61 @@ update_verify() {
 }
 
 update_lock() {
-    local _lock _old
+    local _lock _old _steal _tries _valid
     _lock="$DURANIUM_RUN/update.lock"
-    if [ -d "$_lock" ]; then
-        _old=$(cat "$_lock/pid" 2>/dev/null || true)
-        if [ -n "$_old" ] && [ -d "/proc/$_old" ]; then
-            DURANIUM_LAST_ERROR="another update is in progress (pid $_old)"
-            return 1
+    dur_mkdir "$DURANIUM_RUN" || return 1
+    _tries=0
+    while :; do
+        if [ -d "$_lock" ]; then
+            _old=$(cat "$_lock/pid" 2>/dev/null || true)
+            if [ -z "$_old" ]; then
+                # The holder may still be between mkdir and the pid write; give
+                # it a moment instead of stealing the lock.
+                sleep 1
+                _old=$(cat "$_lock/pid" 2>/dev/null || true)
+            fi
+            _valid=0
+            # A live holder must be a duranium process: a recycled PID running
+            # something unrelated must not block updates forever. (In test
+            # mode any live process counts; the suite seeds pid 1 on purpose.)
+            if dur_is_uint "$_old" && [ -d "/proc/$_old" ]; then
+                if [ "${DURANIUM_TEST_MODE:-0}" = "1" ] || \
+                   grep -q duranium "/proc/$_old/cmdline" 2>/dev/null; then
+                    _valid=1
+                fi
+            fi
+            if [ "$_valid" = "1" ]; then
+                DURANIUM_LAST_ERROR="another update is in progress (pid $_old)"
+                return 1
+            fi
+            # Stale. Rename-steal: mv is atomic, so of two concurrent stealers
+            # only the one whose mv succeeds owns the removal. The old
+            # rm-then-mkdir interleave could delete a fresh lock and leave two
+            # holders both writing the same target.
+            _steal="$_lock.steal.$$"
+            if mv "$_lock" "$_steal" 2>/dev/null; then
+                rm -rf "$_steal" 2>/dev/null || true
+            else
+                _tries=$((_tries + 1))
+                [ "$_tries" -le 5 ] || {
+                    DURANIUM_LAST_ERROR="cannot steal stale update lock"
+                    return 1
+                }
+                continue
+            fi
         fi
-        rm -rf "$_lock" 2>/dev/null || true
-    fi
-    mkdir -p "$_lock" 2>/dev/null || {
-        DURANIUM_LAST_ERROR="cannot create update lock"
-        return 1
-    }
-    printf '%s\n' "$$" > "$_lock/pid"
-    UPDATE_LOCK="$_lock"
-    return 0
+        # mkdir without -p is atomic: a contender cannot create the same lock.
+        if mkdir "$_lock" 2>/dev/null; then
+            printf '%s\n' "$$" > "$_lock/pid"
+            UPDATE_LOCK="$_lock"
+            return 0
+        fi
+        _tries=$((_tries + 1))
+        [ "$_tries" -le 5 ] || {
+            DURANIUM_LAST_ERROR="cannot create update lock"
+            return 1
+        }
+    done
 }
 
 update_unlock() {
@@ -150,6 +212,31 @@ update_target_mounted() {
     _dev=$1
     [ -r /proc/mounts ] || return 1
     awk -v d="$_dev" '$1 == d { found = 1 } END { exit(found ? 0 : 1) }' /proc/mounts
+}
+
+# Refuse to write a system image over STATE, BOOT or RECOVERY. Device
+# resolution is config/partlabel-driven; a colliding DURANIUM_SLOT_*_PARTLABEL
+# or a bad dir-backend path must fail closed, especially in recovery where
+# STATE is typically unmounted and the mounted-device check cannot help.
+update_target_dev_ok() {
+    local _dev _p _real _rprot
+    _dev=$1
+    [ -n "$_dev" ] || { DURANIUM_LAST_ERROR="target device is empty"; return 1; }
+    _real=$(readlink -f "$_dev" 2>/dev/null) || _real="$_dev"
+    for _p in "$DURANIUM_STATE_DEV" "$DURANIUM_BOOT_DEV" "$DURANIUM_RECOVERY_DEV" \
+              "$DURANIUM_SLOT_A_DEV" "$DURANIUM_SLOT_B_DEV"; do
+        [ -n "$_p" ] || continue
+        _rprot=$(readlink -f "$_p" 2>/dev/null) || _rprot="$_p"
+        if [ "$_real" = "$_rprot" ]; then
+            # A slot may only be written when it is the chosen target: the
+            # caller already guaranteed active != target.
+            if [ "$_p" != "$DURANIUM_SLOT_A_DEV" ] && [ "$_p" != "$DURANIUM_SLOT_B_DEV" ]; then
+                DURANIUM_LAST_ERROR="refusing to write system image over $_p"
+                return 1
+            fi
+        fi
+    done
+    return 0
 }
 
 update_copy_boot_artifacts() {
@@ -212,8 +299,12 @@ update_install() {
     _target_arg=${4:-}
     _recovery_mode=${5:-0}
 
+    # Clean the lock and the materialized-payload tmp directory no matter
+    # how this function exits (including the test power-loss exit).
+    trap 'update_unlock; dur_cleanup_run_tmp' EXIT INT TERM
+
     manifest_verify "$_dir" || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
-    update_verify_compatibility "$_allow_profile" || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
+    update_verify_compatibility "$_allow_profile" "$_recovery_mode" || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
 
     meta_load_global || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
     _booted=$(slot_booted 2>/dev/null || true)
@@ -223,6 +314,17 @@ update_install() {
         [ -n "$_target_arg" ] || { dur_err "update: recovery install requires --target A|B"; return 1; }
         _target=$_target_arg
         dur_is_slot "$_target" || { dur_err "update: invalid target slot"; return 1; }
+        # A recovery reinstall supersedes any prior pending transaction: a
+        # stale PENDING slot left untouched keeps its +N entry, which outranks
+        # the freshly installed slot after confirmation and hijacks every
+        # boot. Mark it BAD so the transaction has exactly one pending slot.
+        _other=$(dur_other_slot "$_target") || return 1
+        if meta_load_slot "$_other" && [ "$MS_status" = "PENDING" ]; then
+            meta_update_slot "$_other" status=BAD known_good=0 boot_attempts_remaining=0 pending_boot_id= || {
+                dur_err "update: cannot invalidate stale pending slot $_other"
+                return 1
+            }
+        fi
         # Reinstalling the currently active slot must first move the active
         # pointer to another GOOD slot (or to none). active == pending would be
         # invalid metadata.
@@ -258,6 +360,7 @@ update_install() {
     fi
 
     _tdev=$(backend_slot_dev "$_target") || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
+    update_target_dev_ok "$_tdev" || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
     if update_target_mounted "$_tdev"; then
         dur_err "update: target slot device is mounted: $_tdev"
         return 1
@@ -275,7 +378,6 @@ update_install() {
     [ "$_phash" = "$MF_system_image_sha256" ] || { dur_err "update: payload hash mismatch"; return 1; }
 
     update_lock || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
-    trap 'update_unlock' EXIT INT TERM
 
     update_log "update start target=$_target build=$MF_build_id allow_profile=$_allow_profile recovery=$_recovery_mode"
     dur_log "installing $MF_build_id into slot $_target (active selection untouched)"
@@ -336,6 +438,7 @@ update_install() {
         alloy_version="$MF_alloy_version" \
         build_id="$MF_build_id" \
         image_sha256="$MF_system_image_sha256" \
+        image_size="$MF_system_image_size" \
         boot_kernel_sha256="$MF_boot_kernel_sha256" \
         boot_initramfs_sha256="$MF_boot_initramfs_sha256" \
         profile="$MF_profile" \
@@ -360,6 +463,7 @@ update_install() {
 
     update_log "update ready target=$_target build=$MF_build_id"
     update_unlock
+    dur_cleanup_run_tmp
     trap - EXIT INT TERM
     printf 'READY_TO_REBOOT slot=%s build=%s\n' "$_target" "$MF_build_id"
     if [ "$_reboot" = "1" ]; then

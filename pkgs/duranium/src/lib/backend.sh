@@ -178,11 +178,12 @@ backend_fsck_slot() {
     if [ "$DURANIUM_BACKEND" = "dir" ]; then
         return 0
     fi
-    if command -v fsck.ext4 >/dev/null 2>&1; then
-        fsck.ext4 -fn "$_dev" >/dev/null 2>&1
-        return $?
+    if ! command -v fsck.ext4 >/dev/null 2>&1; then
+        DURANIUM_LAST_ERROR="fsck.ext4 is not available; cannot check slot filesystem"
+        return 1
     fi
-    return 0
+    fsck.ext4 -fn "$_dev" >/dev/null 2>&1
+    return $?
 }
 
 backend_boot_path() {
@@ -277,6 +278,26 @@ backend_umount() {
 }
 
 backend_state_format() {
+    local _dev _real _rprot _slot_dev
+    # Sanity: never wipe anything that is not actually the STATE device. A
+    # config typo that points STATE at a slot (or vice versa) must fail here
+    # instead of destroying a system image or user data.
+    _dev=$DURANIUM_STATE_DEV
+    [ -n "$_dev" ] || { DURANIUM_LAST_ERROR="STATE device is not configured"; return 1; }
+    case "$DURANIUM_STATE_MNT" in
+        ''|/|/boot|/boot/*) DURANIUM_LAST_ERROR="unsafe STATE mountpoint: $DURANIUM_STATE_MNT"; return 1 ;;
+    esac
+    if [ "$DURANIUM_BACKEND" != "dir" ]; then
+        _real=$(readlink -f "$_dev" 2>/dev/null) || _real="$_dev"
+        for _slot_dev in "$DURANIUM_SLOT_A_DEV" "$DURANIUM_SLOT_B_DEV" "$DURANIUM_BOOT_DEV" "$DURANIUM_RECOVERY_DEV"; do
+            [ -n "$_slot_dev" ] || continue
+            _rprot=$(readlink -f "$_slot_dev" 2>/dev/null) || _rprot="$_slot_dev"
+            if [ "$_real" = "$_rprot" ]; then
+                DURANIUM_LAST_ERROR="refusing to format $_real: it is not the STATE device"
+                return 1
+            fi
+        done
+    fi
     if [ "$DURANIUM_BACKEND" = "dir" ]; then
         rm -rf "$DURANIUM_STATE_MNT"
         dur_mkdir "$DURANIUM_STATE_MNT" || return 1

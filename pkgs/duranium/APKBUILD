@@ -41,10 +41,14 @@ package() {
     install -Dm755 "$startdir/src/root/sbin-init" \
         "$pkgdir/usr/share/duranium/fixture/sbin-init"
 
+    # The runtime reads DURANIUM_MIGRATIONS_DIR (default
+    # /usr/lib/duranium/migrations, src/etc/duranium.conf). Installing the
+    # migrations elsewhere made every state migrate fail with
+    # "no migration N -> N" and marked pending slots BAD on boot.
     install -Dm755 "$startdir/src/migrations/1-to-2.sh" \
-        "$pkgdir/usr/share/duranium/examples/migrations/1-to-2.sh"
+        "$pkgdir/usr/lib/duranium/migrations/1-to-2.sh"
     install -Dm644 "$startdir/src/migrations/1-to-2.conf" \
-        "$pkgdir/usr/share/duranium/examples/migrations/1-to-2.conf"
+        "$pkgdir/usr/lib/duranium/migrations/1-to-2.conf"
 
     for f in "$startdir"/docs/*.md; do
         install -Dm644 "$f" "$pkgdir/usr/share/duranium/docs/$(basename "$f")"

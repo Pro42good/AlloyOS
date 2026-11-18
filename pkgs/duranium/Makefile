@@ -44,8 +44,8 @@ install:
 	install -Dm644 src/etc/initramfs.conf "$(DESTDIR)$(PREFIX)/share/duranium/initramfs/initramfs.conf"
 	install -Dm755 src/recovery/init "$(DESTDIR)$(PREFIX)/share/duranium/recovery/init"
 	install -Dm755 src/root/sbin-init "$(DESTDIR)$(PREFIX)/share/duranium/fixture/sbin-init"
-	install -Dm755 src/migrations/1-to-2.sh "$(DESTDIR)$(PREFIX)/share/duranium/examples/migrations/1-to-2.sh"
-	install -Dm644 src/migrations/1-to-2.conf "$(DESTDIR)$(PREFIX)/share/duranium/examples/migrations/1-to-2.conf"
+	install -Dm755 src/migrations/1-to-2.sh "$(DESTDIR)$(PREFIX)/lib/duranium/migrations/1-to-2.sh"
+	install -Dm644 src/migrations/1-to-2.conf "$(DESTDIR)$(PREFIX)/lib/duranium/migrations/1-to-2.conf"
 	for f in docs/*.md; do \
 	    install -Dm644 "$$f" "$(DESTDIR)$(PREFIX)/share/duranium/docs/$$(basename $$f)"; \
 	done

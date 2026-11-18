@@ -10,7 +10,7 @@
 #   $DURANIUM_META_DIR/slots/A.meta     (+ .bak)
 #   $DURANIUM_META_DIR/slots/B.meta     (+ .bak)
 
-SLOT_FIELDS="duranium_meta kind slot alloy_version build_id image_sha256 boot_kernel_sha256 boot_initramfs_sha256 profile architecture hardware_target state_schema status boot_attempts_remaining max_boot_attempts known_good pending_boot_id generation updated_at"
+SLOT_FIELDS="duranium_meta kind slot alloy_version build_id image_sha256 image_size boot_kernel_sha256 boot_initramfs_sha256 profile architecture hardware_target state_schema status boot_attempts_remaining max_boot_attempts known_good pending_boot_id generation updated_at"
 GLOBAL_FIELDS="duranium_meta kind active_slot pending_slot fallback_slot last_known_good_slot update_in_progress generation updated_at"
 
 meta_slot_path() {
@@ -44,6 +44,7 @@ meta_render_slot_prefix() {
     printf 'alloy_version=%s\n' "$(meta_val "$_p" alloy_version)"
     printf 'build_id=%s\n' "$(meta_val "$_p" build_id)"
     printf 'image_sha256=%s\n' "$(meta_val "$_p" image_sha256)"
+    printf 'image_size=%s\n' "$(meta_val "$_p" image_size)"
     printf 'boot_kernel_sha256=%s\n' "$(meta_val "$_p" boot_kernel_sha256)"
     printf 'boot_initramfs_sha256=%s\n' "$(meta_val "$_p" boot_initramfs_sha256)"
     printf 'profile=%s\n' "$(meta_val "$_p" profile)"
@@ -80,6 +81,7 @@ meta_parse_file() {
     MP_BODY=""
     MP_BODY_NO_NL=""
     MP_CHECKSUM=""
+    MP_CHECKSUM_SEEN=""
     MP_SEEN=""
     MP_SOURCE=""
     case "$_kind" in
@@ -111,8 +113,11 @@ meta_parse_file() {
         MP_SEEN="$MP_SEEN $_key"
         if [ "$_key" = "checksum" ]; then
             MP_CHECKSUM=$_value
+            MP_CHECKSUM_SEEN=1
             continue
         fi
+        # The checksum line must be the final line.
+        [ -z "$MP_CHECKSUM_SEEN" ] || return 1
         case " $_fields " in
             *" $_key "*) ;;
             *) return 1 ;;
@@ -183,6 +188,10 @@ meta_validate_slot() {
     dur_is_uint "$MS_generation" || return 1
     [ "$MS_generation" -ge 1 ] || return 1
     [ -n "$MS_updated_at" ] || return 1
+    if [ -n "${MS_image_size:-}" ]; then
+        dur_is_uint "${MS_image_size:-}" || return 1
+        [ "${MS_image_size:-}" -gt 0 ] || return 1
+    fi
     case "$_status" in
         GOOD)
             [ "$_known" = "1" ] || return 1
@@ -290,11 +299,14 @@ meta_write_file() {
             *) _kind=slot ;;
         esac
         if meta_parse_file "$_dest" "$_kind" >/dev/null 2>&1; then
-            cp "$_dest" "$_dest.bak" 2>/dev/null || {
+            # The backup copy must itself be atomic: a truncated .bak right
+            # before the primary is replaced is exactly the dual-corruption
+            # window the redundancy exists to prevent.
+            dur_copy_atomic "$_dest" "$_dest.bak" || {
+                rm -f "$_dest.bak.tmp.$$" 2>/dev/null || true
                 dur_err "cannot create metadata backup $_dest.bak"
                 return 1
             }
-            sync 2>/dev/null || true
         fi
     fi
     printf '%s\n' "$_text" | dur_atomic_write "$_dest" || return 1
@@ -343,6 +355,12 @@ meta_apply_updates() {
         esac
         _k=${_kv%%=*}
         _v=${_kv#*=}
+        # Identity fields define which file a record lives in; rewriting them
+        # would let a checksum-valid record land under the wrong name.
+        case "$_k" in
+            duranium_meta|kind) dur_err "refusing to update identity field '$_k'"; return 1 ;;
+            slot) [ "$_kind" = "slot" ] && { dur_err "refusing to update identity field 'slot'"; return 1; } ;;
+        esac
         case " $_fields " in
             *" $_k "*) ;;
             *) dur_err "unknown metadata field '$_k'"; return 1 ;;
@@ -354,23 +372,105 @@ meta_apply_updates() {
     return 0
 }
 
+# Read-modify-write sequences on the metadata files are not otherwise
+# serialized: a concurrent boot-reconcile running between an updater's load
+# and write could clobber the transaction. Every mutating entry point takes
+# this lock. Re-entrant within one process (the updater already holds the
+# update lock and calls meta_update_* in its phases).
+META_LOCK_HELD=0
+META_LOCK=""
+
+meta_lock() {
+    local _lock _old _steal _tries _valid
+    [ "$META_LOCK_HELD" = "1" ] && return 0
+    _lock="$DURANIUM_RUN/meta.lock"
+    dur_mkdir "$DURANIUM_RUN" || return 1
+    _tries=0
+    while :; do
+        if [ -d "$_lock" ]; then
+            _old=$(cat "$_lock/pid" 2>/dev/null || true)
+            if [ -z "$_old" ]; then
+                # The holder may be between mkdir and the pid write.
+                sleep 1
+                _old=$(cat "$_lock/pid" 2>/dev/null || true)
+            fi
+            _valid=0
+            if dur_is_uint "$_old" && [ -d "/proc/$_old" ]; then
+                if [ "${DURANIUM_TEST_MODE:-0}" = "1" ] || \
+                   grep -q duranium "/proc/$_old/cmdline" 2>/dev/null; then
+                    _valid=1
+                fi
+            fi
+            if [ "$_valid" = "1" ]; then
+                DURANIUM_LAST_ERROR="metadata is locked by another duranium process (pid $_old)"
+                return 1
+            fi
+            # Stale. Rename-steal so two stealers cannot both win: only the
+            # one whose mv succeeds owns the removal.
+            _steal="$_lock.steal.$$"
+            if mv "$_lock" "$_steal" 2>/dev/null; then
+                rm -rf "$_steal" 2>/dev/null || true
+            else
+                _tries=$((_tries + 1))
+                [ "$_tries" -le 5 ] || {
+                    DURANIUM_LAST_ERROR="cannot steal stale metadata lock"
+                    return 1
+                }
+                continue
+            fi
+        fi
+        # mkdir without -p is atomic: a contender cannot create the same lock.
+        if mkdir "$_lock" 2>/dev/null; then
+            printf '%s\n' "$$" > "$_lock/pid"
+            META_LOCK="$_lock"
+            META_LOCK_HELD=1
+            return 0
+        fi
+        _tries=$((_tries + 1))
+        [ "$_tries" -le 5 ] || {
+            DURANIUM_LAST_ERROR="cannot create metadata lock"
+            return 1
+        }
+    done
+}
+
+meta_unlock() {
+    if [ "${META_LOCK_HELD:-0}" = "1" ] && [ -n "${META_LOCK:-}" ] && [ -d "$META_LOCK" ]; then
+        rm -rf "$META_LOCK" 2>/dev/null || true
+    fi
+    META_LOCK=""
+    META_LOCK_HELD=0
+}
+
 meta_update_slot() {
-    local _slot
+    local _rc _slot
     _slot=$1
     shift
-    meta_load_slot "$_slot" || return 1
-    meta_apply_updates MS slot "$@" || return 1
-    MS_generation=$((MS_generation + 1))
-    MS_updated_at=$(dur_timestamp)
-    meta_write_slot
+    meta_lock || return 1
+    meta_load_slot "$_slot" || { _rc=1; }
+    if [ "${_rc:-0}" -eq 0 ]; then
+        if meta_apply_updates MS slot "$@" && \
+           { MS_generation=$((MS_generation + 1)); MS_updated_at=$(dur_timestamp); meta_write_slot; }; then
+            _rc=0
+        else
+            _rc=1
+        fi
+    fi
+    meta_unlock
+    return "$_rc"
 }
 
 meta_update_global() {
-    meta_load_global || return 1
-    meta_apply_updates MG global "$@" || return 1
-    MG_generation=$((MG_generation + 1))
-    MG_updated_at=$(dur_timestamp)
-    meta_write_global
+    local _rc
+    meta_lock || return 1
+    if meta_load_global && meta_apply_updates MG global "$@" && \
+       { MG_generation=$((MG_generation + 1)); MG_updated_at=$(dur_timestamp); meta_write_global; }; then
+        _rc=0
+    else
+        _rc=1
+    fi
+    meta_unlock
+    return "$_rc"
 }
 
 meta_init_slot() {
@@ -384,6 +484,7 @@ meta_init_slot() {
     MS_alloy_version=unknown
     MS_build_id=unknown
     MS_image_sha256=
+    MS_image_size=
     MS_boot_kernel_sha256=
     MS_boot_initramfs_sha256=
     MS_profile=$DURANIUM_PROFILE
@@ -435,14 +536,16 @@ meta_repair_primary() {
             _path=$(meta_slot_path "$_slot")
             meta_parse_file "$_path" slot >/dev/null 2>&1 && return 0
             meta_parse_file "$_path.bak" slot >/dev/null 2>&1 || return 1
-            cp "$_path.bak" "$_path" || return 1
+            dur_copy_atomic "$_path.bak" "$_path" || return 1
+            rm -f "$_path.tmp.$$" 2>/dev/null || true
             sync 2>/dev/null || true
             ;;
         global)
             _path=$(meta_global_path)
             meta_parse_file "$_path" global >/dev/null 2>&1 && return 0
             meta_parse_file "$_path.bak" global >/dev/null 2>&1 || return 1
-            cp "$_path.bak" "$_path" || return 1
+            dur_copy_atomic "$_path.bak" "$_path" || return 1
+            rm -f "$_path.tmp.$$" 2>/dev/null || true
             sync 2>/dev/null || true
             ;;
         *) return 1 ;;
@@ -454,9 +557,9 @@ meta_slot_summary() {
     local _slot
     _slot=$1
     if meta_load_slot "$_slot"; then
-        printf 'slot %s: status=%s known_good=%s boot_attempts_remaining=%s max_boot_attempts=%s version=%s build=%s schema=%s source=%s\n' \
+        printf 'slot %s: status=%s known_good=%s boot_attempts_remaining=%s max_boot_attempts=%s version=%s build=%s image_size=%s schema=%s source=%s\n' \
             "$_slot" "$MS_status" "$MS_known_good" "$MS_boot_attempts_remaining" "$MS_max_boot_attempts" \
-            "$MS_alloy_version" "$MS_build_id" "$MS_state_schema" "$MS_SOURCE"
+            "$MS_alloy_version" "$MS_build_id" "${MS_image_size:-}" "$MS_state_schema" "$MS_SOURCE"
         return 0
     fi
     printf 'slot %s: INVALID/MISSING (%s)\n' "$_slot" "${DURANIUM_LAST_ERROR:-unknown error}"

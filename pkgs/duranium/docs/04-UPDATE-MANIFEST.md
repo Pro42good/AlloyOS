@@ -77,7 +77,9 @@ development override enabled; prod always rejects it.
 6. Profile, architecture, hardware target, and STATE schema are compatible.
 
 Activation (writing `PENDING`) happens only after the updater also reads back
-the written block device and hashes the exact payload length.
+the written block device, hashes the exact payload length, and runs an
+offline `fsck.ext4 -fn` on the target partition (`DURANIUM_FSCK=1` is the
+default; a missing fsck tool is a hard failure, not a skip).
 
 ## Rejection cases covered by tests
 

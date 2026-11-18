@@ -54,4 +54,11 @@ assert_fail "unknown mandatory field rejected" dk admin init-slot B nonsense=1
 
 assert_slot_status "B remains UNKNOWN after rejected writes" B UNKNOWN
 
+# Identity fields must not be writable: rewriting 'slot' would let a
+# checksum-valid record land under the wrong filename.
+test_init metadata-identity
+assert_fail "rewriting slot identity is refused" dk admin init-slot A slot=B status=GOOD
+assert_fail "rewriting kind is refused" dk admin init-slot A kind=global
+assert_slot_status "A metadata untouched by rejected writes" A GOOD
+
 test_done

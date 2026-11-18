@@ -61,6 +61,8 @@ overlaid by STATE, image-owned markers must live elsewhere. The fixture uses
 
 ```
 /state/duranium/schema
+/state/duranium/bootlog
+/state/duranium/boot/<slot>.state
 /state/duranium/backups/
 /state/duranium/updates.log
 /state/duranium/duranium.log
@@ -68,7 +70,16 @@ overlaid by STATE, image-owned markers must live elsewhere. The fixture uses
 
 Update history and diagnostics are in STATE, but **boot-critical** slot and
 global metadata are on BOOT. A missing or corrupt STATE cannot change which
-slot is selected.
+slot is selected. A non-numeric `/state/duranium/schema` is treated as
+corrupt: installs and migrations fail closed rather than silently skipping
+the schema checks.
+
+`/state/duranium/bootlog` is an append-only evidence journal (boot
+confirmations, sign-ins, crash reports, clean shutdowns, detections).
+`/state/duranium/boot/<slot>.state` holds the most recent userland boot of
+each slot so the next boot can detect an unclean shutdown. Both are
+diagnostics and `mark-good` gating evidence only: they never influence
+which slot is selected.
 
 ## Ephemeral and recreatable behavior
 

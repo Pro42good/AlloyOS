@@ -19,8 +19,11 @@ state_load_config() {
     STATE_SCHEMA_DECLARED=1
     _conf=$DURANIUM_STATE_CONF
     if [ ! -r "$_conf" ]; then
-        # Built-in minimal V1 allowlist.
+        # Built-in fallback must mirror src/etc/state.conf, otherwise a
+        # recovery environment without the config would silently drop
+        # STATE-backed directories.
         STATE_PERSISTENT="/home /var/lib/alloy /etc/alloy"
+        STATE_RECREATABLE="/var/cache /var/log"
         STATE_EPHEMERAL="/run /tmp /var/tmp"
         return 0
     fi
@@ -47,7 +50,7 @@ state_load_config() {
                     *) DURANIUM_LAST_ERROR="state path must be absolute: $_path"; return 1 ;;
                 esac
                 case "$_path" in
-                    *..*|*//*|*' '*) DURANIUM_LAST_ERROR="unsafe state path: $_path"; return 1 ;;
+                    /|*..*|*//*|*' '*) DURANIUM_LAST_ERROR="unsafe state path: $_path"; return 1 ;;
                 esac
                 ;;
             *)
@@ -65,6 +68,7 @@ state_init_layout() {
     dur_mkdir "$_root" || return 1
     dur_mkdir "$_root/duranium" || return 1
     dur_mkdir "$_root/duranium/backups" || return 1
+    dur_mkdir "$_root/duranium/boot" || return 1
     for _p in $STATE_PERSISTENT $STATE_RECREATABLE; do
         dur_mkdir "$_root$_p" || return 1
     done
@@ -76,11 +80,20 @@ state_init_layout() {
 }
 
 state_schema_get() {
+    local _v
     if [ -r "$DURANIUM_STATE_MNT/duranium/schema" ]; then
-        tr -d '\n' < "$DURANIUM_STATE_MNT/duranium/schema"
+        _v=$(tr -d '\n' < "$DURANIUM_STATE_MNT/duranium/schema")
+        case "$_v" in
+            ''|*[!0-9]*)
+                DURANIUM_LAST_ERROR="STATE schema file is corrupt"
+                return 1
+                ;;
+        esac
+        printf '%s\n' "$_v"
         return 0
     fi
     printf '0\n'
+    return 0
 }
 
 state_schema_set() {
@@ -92,6 +105,22 @@ state_schema_set() {
     sync 2>/dev/null || true
     mv -f "$DURANIUM_STATE_MNT/duranium/schema.tmp.$$" "$DURANIUM_STATE_MNT/duranium/schema" || return 1
     sync 2>/dev/null || true
+    return 0
+}
+
+# True when the STATE tree holds no data: no declared persistent/recreatable
+# path and no Duranium bookkeeping. Used to distinguish a genuinely fresh
+# STATE (schema marker may be created) from a tree whose schema marker was
+# lost (partial factory reset, backup restore, manual deletion).
+state_tree_is_empty() {
+    local _p
+    [ -e "$DURANIUM_STATE_MNT" ] || return 0
+    for _p in $STATE_PERSISTENT $STATE_RECREATABLE; do
+        [ -e "$DURANIUM_STATE_MNT$_p" ] && return 1
+    done
+    for _p in bootlog backups boot migrations.log duranium.log updates.log; do
+        [ -e "$DURANIUM_STATE_MNT/duranium/$_p" ] && return 1
+    done
     return 0
 }
 
@@ -113,6 +142,21 @@ state_backup() {
     return 0
 }
 
+state_backup_prune() {
+    # Keep only the most recent backups; unbounded growth eventually fills
+    # STATE, and a failed backup aborts the migration and marks the pending
+    # slot BAD until an operator intervenes.
+    local _dir _f _keep
+    _keep=${DURANIUM_MIGRATION_BACKUP_KEEP:-3}
+    dur_is_uint "$_keep" || _keep=3
+    _dir="$DURANIUM_STATE_MNT/duranium/backups"
+    [ -d "$_dir" ] || return 0
+    for _f in $(ls -1t "$_dir"/before-*.tar 2>/dev/null | tail -n +$((_keep + 1))); do
+        rm -f "$_f" 2>/dev/null || true
+    done
+    return 0
+}
+
 state_migration_kind() {
     local _conf _kind
     _conf=$1
@@ -126,8 +170,19 @@ state_migrate() {
     local _backup _conf _current _from _kind _required _script _to
     _required=$1
     dur_is_uint "$_required" || { DURANIUM_LAST_ERROR="invalid required state schema"; return 3; }
-    _current=$(state_schema_get)
+    _current=$(state_schema_get) || {
+        DURANIUM_LAST_ERROR="STATE schema is corrupt: $DURANIUM_LAST_ERROR"
+        return 3
+    }
     if [ "$_current" = "0" ]; then
+        # Fast-forward 0 -> required only on a genuinely empty STATE tree.
+        # A tree with data and no schema marker has a lost marker; claiming
+        # an unmigrated layout would expose user data to the new schema.
+        state_load_config 2>/dev/null || true
+        if ! state_tree_is_empty; then
+            DURANIUM_LAST_ERROR="STATE schema marker is missing but STATE has data; refusing to fast-forward"
+            return 3
+        fi
         state_schema_set "$_required" || return 1
         return 0
     fi
@@ -172,6 +227,7 @@ state_migrate() {
             return 2
         fi
         state_schema_set "$_to" || return 1
+        state_backup_prune || true
         printf '%s migration %s->%s ok kind=%s backup=%s\n' \
             "$(dur_timestamp)" "$_from" "$_to" "$_kind" "${_backup:-none}" \
             >> "$DURANIUM_STATE_MNT/duranium/migrations.log" 2>/dev/null || true
@@ -222,7 +278,7 @@ state_prepare_mounts() {
     fi
     _state="$NEWROOT/state"
     if [ ! -d "$_state/duranium" ]; then
-        mkdir -p "$_state/duranium/backups" 2>/dev/null || true
+        mkdir -p "$_state/duranium/backups" "$_state/duranium/boot" 2>/dev/null || true
         printf '%s\n' "$STATE_SCHEMA_DECLARED" > "$_state/duranium/schema" 2>/dev/null || true
     fi
     for _p in $STATE_PERSISTENT $STATE_RECREATABLE; do

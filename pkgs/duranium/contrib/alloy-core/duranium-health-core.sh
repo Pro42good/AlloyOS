@@ -12,9 +12,9 @@ fi
 
 _state=$(systemctl is-system-running 2>/dev/null || true)
 case "$_state" in
-    running|starting) ;;
+    running) ;;
     *)
-        printf 'duranium health: systemd state is %s\n' "${_state:-unknown}" >&2
+        printf 'duranium health: systemd state is %s (refusing before "running")\n' "${_state:-unknown}" >&2
         exit 1
         ;;
 esac

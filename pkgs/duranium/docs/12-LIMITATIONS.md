@@ -27,6 +27,13 @@ Duranium V1 is a proof, not a polished product. These are deliberate limits.
   bind setup, but it is not part of the green V1 suite. The built-in health
   check also expects a directly read-only `/`; an overlay-root adapter must
   disable that check and verify the lower SYSTEM mount is read-only instead.
+- The boot-confirmation handshake is enforced by `mark-good` and exercised
+  by the fixture's PID 1 (`duranium boot-confirm`). The **sign-in gate**
+  (`duranium session-confirm` with `DURANIUM_REQUIRE_SESSION=1`) is a stub
+  saved for later: the API is implemented and unit-tested, but no GUI calls
+  it and the default does not require it. Crash detection is journal-based
+  (`duranium session-crash` reports plus unclean-shutdown detection at the
+  next `boot-confirm`); there is no watchdog or core-dump integration.
 - The minimal STATE allowlist is `/home`, `/var/lib/alloy`, and `/etc/alloy`.
   Real Core integration will need NetworkManager connections, SSH host keys,
   Bluetooth pairings, and possibly other explicit paths, each with a migration

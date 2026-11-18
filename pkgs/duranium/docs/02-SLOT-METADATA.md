@@ -23,6 +23,7 @@ slot=A
 alloy_version=1.0
 build_id=A-v1
 image_sha256=<64 hex>
+image_size=<bytes>
 boot_kernel_sha256=<64 hex>
 boot_initramfs_sha256=<64 hex>
 profile=prod
@@ -58,6 +59,14 @@ checksum=<64 hex>
 `active_slot` deliberately remains the previous GOOD slot; the booted slot is
 reported separately as `booted slot`.
 
+`image_size` records the exact byte length of the installed system image.
+`image_sha256` covers exactly those bytes, **not** the whole slot partition:
+partitions are provisioned with headroom, and the partition tail contains
+whatever preceded the install. Verification (`mark-good`, and boot-time
+verification when enabled) hashes exactly `image_size` bytes. Metadata
+written before `image_size` existed is verified against the full device
+size, which only matches when the image fills the partition.
+
 ## States
 
 | Status | Meaning | Automatically booted? |
@@ -90,6 +99,7 @@ The parser rejects:
 - unknown fields (the schema is closed; field-order changes are rejected);
 - duplicate fields;
 - invalid checksums;
+- a `checksum=` line that is not the final line;
 - non-canonical field order;
 - invalid `slot` values;
 - statuses outside `UNKNOWN|PENDING|GOOD|BAD`;

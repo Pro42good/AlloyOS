@@ -25,6 +25,14 @@ unset DURANIUM_INITRAMFS DURANIUM_BOOT_DEV DURANIUM_SLOT_A_DEV DURANIUM_SLOT_B_D
 mount -t proc proc /proc 2>/dev/null || true
 mount -t sysfs sys /sys 2>/dev/null || true
 mount -t devtmpfs dev /dev 2>/dev/null || true
+
+# As PID 1 we must never fall through a safety gate because reboot/poweroff
+# failed: continuing would let a rejected boot reach boot-reconcile and
+# boot-confirm. Halting forever is the safe last resort.
+_dur_halt_forever() {
+    printf 'duranium-init: cannot reboot or power off; halting\n' >&2
+    while :; do sleep 3600; done
+}
 mkdir -p /run /tmp /var/tmp
 grep -q ' /run ' /proc/mounts || mount -t tmpfs -o mode=755,nosuid,nodev tmpfs /run 2>/dev/null || true
 grep -q ' /tmp ' /proc/mounts || mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /tmp 2>/dev/null || true
@@ -42,27 +50,46 @@ fi
 if [ -n "$_slot" ] && [ ! -r /run/duranium/boot.env ]; then
     /usr/bin/duranium boot-record "$_slot" || {
         printf 'DURANIUM_BOOT_RECORD_FAILED\n' >&2
-        reboot -f 2>/dev/null || poweroff -f 2>/dev/null || true
+        reboot -f 2>/dev/null || poweroff -f 2>/dev/null || _dur_halt_forever
     }
 fi
 
 _img_slot=$(cat /etc/duranium/slot 2>/dev/null || true)
 if [ -n "$_slot" ] && [ -n "$_img_slot" ] && [ "$_slot" != "$_img_slot" ]; then
     printf 'DURANIUM_SLOT_MISMATCH initramfs=%s rootfs=%s\n' "$_slot" "$_img_slot" >&2
-    reboot -f 2>/dev/null || poweroff -f 2>/dev/null || true
+    reboot -f 2>/dev/null || poweroff -f 2>/dev/null || _dur_halt_forever
 fi
 
 /usr/bin/duranium boot-reconcile || true
 
 if [ -n "$_slot" ] && grep -q ' /state ' /proc/mounts; then
-    /usr/bin/duranium state migrate "$_slot" || {
+    _mrc=0
+    /usr/bin/duranium state migrate "$_slot" || _mrc=$?
+    if [ "$_mrc" -eq 3 ]; then
+        # rc 3 means the slot was PENDING and state_migrate_boot marked it
+        # BAD. Reboot so the fallback slot (or recovery) is selected.
         printf 'DURANIUM_STATE_MIGRATION_FAILED\n' >&2
-        reboot -f 2>/dev/null || poweroff -f 2>/dev/null || true
-    }
+        reboot -f 2>/dev/null || poweroff -f 2>/dev/null || _dur_halt_forever
+    elif [ "$_mrc" -ne 0 ]; then
+        # A GOOD slot must never boot-loop on a migration failure: its own
+        # image is intact and migrations are additive (the install-time gate
+        # enforced rollback compatibility). Continue degraded and let the
+        # next boot retry the migration.
+        printf 'DURANIUM_STATE_MIGRATION_DEGRADED rc=%s\n' "$_mrc" >&2
+    fi
 fi
 
 touch /run/alloy/core-ready
 : > /run/alloy/service-core
+
+# Stage 1 of the boot-confirmation handshake: the fixture OS is up, so it
+# confirms this boot (mark-good requires this). The sign-in gate
+# (session-confirm) is deliberately NOT called here: the fixture has no
+# user session. A real desktop confirms after the user signs in; see
+# contrib/alloy-core/duranium-session-confirm.service and
+# docs/03-BOOT-SELECTION.md.
+/usr/bin/duranium boot-confirm >/dev/null 2>&1 || \
+    printf 'DURANIUM_BOOT_CONFIRM_FAILED\n' >&2
 
 if [ -x /usr/local/bin/duranium-test ]; then
     DURANIUM_TEST_MODE=1 /usr/local/bin/duranium-test

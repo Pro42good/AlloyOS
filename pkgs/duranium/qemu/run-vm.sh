@@ -49,7 +49,7 @@ if [ -z "$VARS" ]; then
     VARS=$(mktemp "${TMPDIR:-/tmp}/duranium-vars.XXXXXX")
 fi
 if [ ! -s "$VARS" ]; then
-    dd if=/dev/zero of="$VARS" bs=1m count=64 status=none
+    dd if=/dev/zero of="$VARS" bs=1M count=64 status=none
 fi
 
 ACCEL_ARGS="-accel hvf -cpu host"

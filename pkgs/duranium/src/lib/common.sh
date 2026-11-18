@@ -179,6 +179,11 @@ dur_umount() {
 }
 
 dur_boot_id() {
+    # Test hook: lets the unit suite simulate distinct boots.
+    if [ "${DURANIUM_TEST_MODE:-0}" = "1" ] && [ -n "${DURANIUM_TEST_BOOT_ID:-}" ]; then
+        printf '%s\n' "$DURANIUM_TEST_BOOT_ID"
+        return 0
+    fi
     if [ -r /proc/sys/kernel/random/boot_id ]; then
         tr -d '\n' < /proc/sys/kernel/random/boot_id
     else

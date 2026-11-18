@@ -33,6 +33,7 @@ assert_file "A has recovery-installed kernel" "$T/root/boot/duranium/boot/A/vmli
 assert_fail "recovery select BAD slot is refused" dk_env "DURANIUM_RECOVERY=1" recovery select B
 
 assert_eq "A boots after recovery reinstall" "A" "$(sim_boot)"
+assert_ok "OS confirms the boot" dk boot-confirm
 assert_ok "A can be marked GOOD after reinstall" dk mark-good A
 assert_slot_status "A is GOOD" A GOOD
 assert_eq "STATE survives boot and mark-good" "state-must-survive" \
@@ -57,5 +58,28 @@ fi
 
 # Full reset is refused without --yes.
 assert_fail "factory reset without --yes refused" dk_env "DURANIUM_RECOVERY=1" recovery factory-reset --mode full
+
+# Recovery reinstall may target an artifact whose required schema is older
+# than the current STATE: the runtime tolerates newer STATE on rollback, so
+# blocking the reinstall would make the only surviving artifact unusable.
+test_init recovery-schema-downgrade
+make_key
+make_artifact "$T/art-old" 1.0 OLD-v1
+printf 'downgrade-state\n' > "$T/root/state/etc/alloy/settings.conf"
+printf '2\n' > "$T/root/state/duranium/schema"
+assert_ok "older-schema artifact reinstalls in recovery" \
+    dk_env "DURANIUM_RECOVERY=1" recovery reinstall --slot A --artifact "$T/art-old"
+assert_slot_status "A PENDING after older-schema reinstall" A PENDING
+assert_eq "STATE survives older-schema reinstall" "downgrade-state" \
+    "$(cat "$T/root/state/etc/alloy/settings.conf")"
+
+# --force is a recovery decision, and it is only meaningful for a slot that
+# can be re-armed: BAD/UNKNOWN slots get no boot entry at all.
+test_init recovery-select-force
+assert_fail "force-select of an UNKNOWN slot is refused" dk slot select B --force
+make_slot_pending B 2.0 B-v2 1 A
+assert_ok "force-select re-arms a pending slot" dk slot select B --force
+assert_slot_status "B PENDING after force-select" B PENDING
+assert_slot_field "attempts re-armed" B boot_attempts_remaining 3
 
 test_done

@@ -93,4 +93,26 @@ assert_slot_status "irreversible migration marks B BAD" B BAD
 assert_eq "irreversible migration did not run" "1" "$(dk state schema)"
 assert_no_file "irreversible migration side effect absent" "$T/root/state/should-not-exist"
 
+# A corrupt STATE schema file fails migration closed instead of silently
+# skipping the migration.
+test_init state-schema-corrupt
+printf 'setting-v1\n' > "$T/root/state/etc/alloy/settings.conf"
+make_slot_pending B 2.0 B-v2 2 A
+assert_eq "boot pending B before corrupt-schema migration" "B" "$(sim_boot)"
+printf 'garbage\n' > "$T/root/state/duranium/schema"
+assert_fail "corrupt schema refuses migration" dk state migrate B
+assert_slot_status "B marked BAD on corrupt schema" B BAD
+assert_eq "old settings untouched" "setting-v1" "$(cat "$T/root/state/etc/alloy/settings.conf")"
+
+# A lost schema marker on a STATE tree that holds data is not the same as a
+# fresh STATE: fast-forwarding would claim a layout that was never produced.
+test_init state-schema-missing
+printf 'data-v1\n' > "$T/root/state/etc/alloy/settings.conf"
+make_slot_pending B 2.0 B-v2 2 A
+assert_eq "boot pending B before missing-schema migration" "B" "$(sim_boot)"
+rm -f "$T/root/state/duranium/schema"
+assert_fail "missing schema marker with data refuses migration" dk state migrate B
+assert_slot_status "B marked BAD on missing schema marker" B BAD
+assert_eq "settings untouched" "data-v1" "$(cat "$T/root/state/etc/alloy/settings.conf")"
+
 test_done

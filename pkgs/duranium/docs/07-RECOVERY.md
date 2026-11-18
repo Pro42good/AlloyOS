@@ -39,9 +39,20 @@ Duranium recovery shell. Try: duranium recovery status
 | `duranium recovery mount-state` / `umount-state` | explicit STATE access |
 | `duranium recovery factory-reset --mode os\|state\|full --yes` | explicit reset |
 
+`--force` is only available from recovery, and only re-arms a PENDING or BAD
+slot as a fresh pending transaction (attempts restored, pending pointer set,
+new `+N` boot entry). UNKNOWN slots cannot be force-selected: they have no
+trusted image, so there is nothing to boot. A recovery reinstall also
+invalidates any other stale PENDING slot, so it leaves exactly one pending
+transaction.
+
 `recovery reinstall` uses the same signed-manifest and read-back verification
 as a normal update. It preserves STATE by default; only `factory-reset` modes
-`state` or `full` wipe it.
+`state` or `full` wipe it. Unlike a normal update, a recovery reinstall may
+target an artifact whose `state_schema_required` is older than the current
+STATE schema: the runtime tolerates a newer STATE on rollback (additive
+migrations only), so refusing the reinstall would make the only surviving
+artifact unusable.
 
 ## Boot path
 

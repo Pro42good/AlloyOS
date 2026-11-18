@@ -5,12 +5,34 @@
 # systemd checks via contrib/alloy-core/health-core.sh. A pending slot cannot
 # become GOOD unless these checks pass.
 
+# For an overlay root the meaningful invariant is not "/ is ro" (the upper
+# layer is writable by design) but "the lower SYSTEM layer is read-only".
+# Verify it here so the constraint documented in the core adapter README is
+# enforced even when no health.d script does it.
+health_overlay_lower_ro() {
+    local _lower _opts _path
+    _opts=$(dur_mount_opts /) || { dur_err "health: cannot read / mount options"; return 1; }
+    _lower=$(printf '%s\n' "$_opts" | tr ',' '\n' | sed -n 's/^lowerdir=//p' | head -n 1)
+    [ -n "$_lower" ] || { dur_err "health: overlay / has no lowerdir"; return 1; }
+    _path=${_lower%%:*}
+    case ",$(dur_mount_opts "$_path")," in
+        *,ro,*) return 0 ;;
+    esac
+    dur_err "health: overlay lower layer $_path is not mounted read-only"
+    return 1
+}
+
 health_root_is_ro() {
-    local _opts
-    [ "${DURANIUM_HEALTH_REQUIRE_ROOT_RO:-1}" = "1" ] || return 0
+    local _opts _type
     if [ "$DURANIUM_BACKEND" = "dir" ]; then
         return 0
     fi
+    _type=$(dur_filesystem_type / || true)
+    if [ "$_type" = "overlay" ]; then
+        health_overlay_lower_ro
+        return $?
+    fi
+    [ "${DURANIUM_HEALTH_REQUIRE_ROOT_RO:-1}" = "1" ] || return 0
     _opts=$(dur_mount_opts /)
     case ",$_opts," in
         *,ro,*) return 0 ;;
@@ -45,15 +67,14 @@ health_core_ready() {
     if command -v systemctl >/dev/null 2>&1; then
         _state=$(systemctl is-system-running 2>/dev/null || true)
         case "$_state" in
-            running|starting)
-                # "starting" is accepted only when no failed units are present;
-                # mark-good normally runs late enough to see "running".
-                _failed=$(systemctl --failed --no-legend --plain 2>/dev/null | wc -l | tr -d ' ')
-                if [ "${_failed:-0}" -gt 0 ]; then
-                    dur_err "health: systemd reports $_failed failed units"
-                    return 1
-                fi
+            running)
                 return 0
+                ;;
+            starting)
+                # Accepting "starting" could confirm a slot whose units are
+                # still about to fail. mark-good must wait for "running".
+                dur_err "health: systemd is still starting; refusing to confirm"
+                return 1
                 ;;
             *)
                 dur_err "health: systemd is not healthy ($_state)"

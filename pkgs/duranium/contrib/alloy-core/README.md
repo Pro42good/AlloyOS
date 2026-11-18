@@ -33,10 +33,14 @@ step, not as a tested production installer.
    ```
    duranium-boot-reconcile.service
    duranium-state-migrate.service
+   duranium-boot-confirm.service
    ```
    Install `duranium-mark-good.service` but leave it disabled unless the
    product explicitly opts into automatic confirmation. V1's policy is manual
    `duranium mark-good`.
+   On desktop images, also install `duranium-session-confirm.service` (the
+   sign-in gate) and set `DURANIUM_REQUIRE_SESSION=1` so `mark-good` refuses
+   a pending slot whose user environment never came up.
 7. **Health checks.** Copy `duranium-health-core.sh` to
    `/etc/duranium/health.d/20-core-systemd.sh` and adjust the expected service
    list.
@@ -107,11 +111,16 @@ The built-in V1 health check expects `/` to be mounted read-only (the fixture
 does this directly). A real Alloy Core adapter that uses an overlay root will
 see `/` as writable while the SYSTEM lower layer is read-only.
 
-For that adapter:
+When `/` is an overlay filesystem, the built-in check now verifies the
+invariant itself: it reads `lowerdir=` from the overlay mount options and
+requires that the lower SYSTEM mount is read-only. `DURANIUM_HEALTH_REQUIRE_ROOT_RO=0`
+is therefore no longer needed on overlay images; the flag only relaxes the
+plain-filesystem check.
 
-- set `DURANIUM_HEALTH_REQUIRE_ROOT_RO=0`; and
-- add a health.d script that verifies the SYSTEM lower mount is still
-  read-only (or that the update path is using the read-only image correctly).
+If the overlay lowerdir is not itself a distinct mount visible in
+`/proc/mounts` (for example when it is a bind of the same root), the check
+cannot verify it; in that case keep a health.d script that verifies the
+SYSTEM image mount is read-only.
 
 Do not remove the underlying invariant: the active SYSTEM image must remain
 read-only even when an overlay presents a writable root.

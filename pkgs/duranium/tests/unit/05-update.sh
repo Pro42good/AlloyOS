@@ -20,6 +20,7 @@ assert_file "B entry has boot counter" "$T/root/boot/loader/entries/duranium-b+3
 assert_contains "global pending is B" "$T/root/boot/duranium/global.meta" "pending_slot=B"
 
 assert_eq "pending B boots" "B" "$(sim_boot)"
+assert_ok "OS confirms the boot" dk boot-confirm
 assert_ok "mark B GOOD" dk mark-good B
 assert_slot_status "B is GOOD" B GOOD
 
@@ -80,5 +81,67 @@ assert_ok "reconcile interrupted update" dk boot-reconcile
 assert_slot_status "interrupted target B is BAD" B BAD
 assert_eq "A still active after power loss" "A" "$(fake_boot)"
 assert_eq "active A unchanged after power loss" "$A_HASH1" "$(sha256sum "$T/root/slots/A.img" | awk '{print $1}')"
+
+# A corrupt STATE schema file must fail the install closed, not silently
+# bypass the schema checks.
+test_init update-schema-corrupt
+make_key
+make_artifact "$T/art-s" 2.0 B-s2 dev aarch64 qemu-aarch64-virt 2
+printf 'garbage\n' > "$T/root/state/duranium/schema"
+assert_fail "corrupt STATE schema refuses install" dk update install "$T/art-s"
+assert_slot_status "B not activated on corrupt schema" B UNKNOWN
+assert_eq "A still active after corrupt schema" "A" "$(fake_boot)"
+
+# gzip payload end-to-end: materialization, size/hash verification, install.
+test_init update-gzip
+make_key
+make_artifact "$T/art-g" 2.0 G-v2
+gzip -c "$T/art-g/system.img" > "$T/art-g/system.img.gz"
+rm -f "$T/art-g/system.img"
+awk '{ if ($0 ~ /^system_image=/) print "system_image=system.img.gz";
+       else if ($0 ~ /^system_image_compression=/) print "system_image_compression=gzip";
+       else print }' "$T/art-g/manifest.txt" > "$T/art-g/manifest.txt.new"
+mv "$T/art-g/manifest.txt.new" "$T/art-g/manifest.txt"
+"$DURANIUM_BIN" manifest sign "$T/art-g" "$T/keys/$KEY_ID.priv.pem" >/dev/null
+assert_eq "boot GOOD A (gzip)" "A" "$(sim_boot)"
+assert_ok "gzip artifact installs" dk update install "$T/art-g"
+assert_slot_status "B PENDING from gzip payload" B PENDING
+assert_eq "B image hash matches manifest" \
+    "$(sed -n 's/^system_image_sha256=//p' "$T/art-g/manifest.txt")" \
+    "$(sha256sum "$T/root/slots/B.img" | awk '{print $1}')"
+
+# Update lock: a live holder must block a second updater. Skipped on hosts
+# without /proc.
+test_init update-lock
+make_key
+make_artifact "$T/art-l" 2.0 L-v2
+assert_eq "boot GOOD A (lock)" "A" "$(sim_boot)"
+mkdir -p "$T/run/update.lock"
+printf '%s\n' "1" > "$T/run/update.lock/pid"
+if [ -d /proc/1 ]; then
+    assert_fail "live lock holder blocks second update" dk update install "$T/art-l"
+    assert_slot_status "B untouched while locked" B UNKNOWN
+fi
+rm -rf "$T/run/update.lock"
+
+# A dead holder's lock is stolen; a stale lock must not wedge updates.
+test_init update-lock-stale
+make_key
+make_artifact "$T/art-s" 2.0 S-v2
+assert_eq "boot GOOD A (stale lock)" "A" "$(sim_boot)"
+mkdir -p "$T/run/update.lock"
+printf '%s\n' "999999" > "$T/run/update.lock/pid"
+assert_ok "dead-holder lock is stolen" dk update install "$T/art-s"
+assert_slot_status "B PENDING after stealing stale lock" B PENDING
+
+# The updater must refuse to write a system image over STATE even when the
+# slot config collides with it (in recovery STATE is unmounted and the
+# mounted-device check cannot catch this).
+test_init update-target-collision
+make_key
+make_artifact "$T/art-c" 2.0 C-v2
+assert_eq "boot GOOD A (collision)" "A" "$(sim_boot)"
+assert_fail "writing over the STATE device is refused" \
+    dk_env "DURANIUM_SLOT_B_DEV=$DURANIUM_STATE_DEV" update install "$T/art-c"
 
 test_done

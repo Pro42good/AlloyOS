@@ -30,6 +30,7 @@ fail() {
     log "FAIL $*"
     printf '%s\n' "$*" > "$STATE/failure" 2>/dev/null || true
     sync 2>/dev/null || true
+    /usr/bin/duranium boot-clean >/dev/null 2>&1 || true
     poweroff -f 2>/dev/null || exit 1
 }
 
@@ -38,6 +39,7 @@ advance() {
     printf '%s\n' "$_next" > "$PHASE_FILE"
     sync 2>/dev/null || true
     log "ADVANCE phase=$_next"
+    /usr/bin/duranium boot-clean >/dev/null 2>&1 || true
     poweroff -f 2>/dev/null || exit 0
 }
 
@@ -45,6 +47,7 @@ finish() {
     printf 'completed\n' > "$STATE/done" 2>/dev/null || true
     sync 2>/dev/null || true
     log "DONE"
+    /usr/bin/duranium boot-clean >/dev/null 2>&1 || true
     poweroff -f 2>/dev/null || exit 0
 }
 
@@ -53,6 +56,7 @@ request_corrupt() {
     printf '%s\n' "$_next" > "$PHASE_FILE"
     log "REQUEST_CORRUPT_$1"
     sync 2>/dev/null || true
+    /usr/bin/duranium boot-clean >/dev/null 2>&1 || true
     poweroff -f 2>/dev/null || exit 0
 }
 

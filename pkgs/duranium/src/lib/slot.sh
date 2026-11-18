@@ -33,14 +33,250 @@ slot_is_good() {
 }
 
 slot_write_boot_env() {
-    local _path _pending _slot
+    local _confirmed _path _pending _slot
     _slot=$1
     _pending=$2
+    _confirmed=${3:-0}
     _path="$DURANIUM_RUN/boot.env"
     dur_mkdir "$DURANIUM_RUN" || return 1
-    printf 'slot=%s\nboot_id=%s\npending=%s\nbooted_at=%s\n' \
-        "$_slot" "$(dur_boot_id)" "$_pending" "$(dur_timestamp)" > "$_path"
+    dur_atomic_write_text "$_path" "slot=$_slot
+boot_id=$(dur_boot_id)
+pending=$_pending
+confirmed=$_confirmed
+session=0
+crash=0
+clean=0
+booted_at=$(dur_timestamp)"
     sync 2>/dev/null || true
+}
+
+slot_boot_env_field() {
+    # slot_boot_env_field <field> - read one field of the current boot record.
+    [ -r "$DURANIUM_RUN/boot.env" ] || return 1
+    sed -n "s/^$1=//p" "$DURANIUM_RUN/boot.env" | head -n 1
+    return 0
+}
+
+slot_boot_env_set() {
+    # slot_boot_env_set <confirmed|session|crash|clean> <0|1>
+    # Targeted update of one per-boot flag, preserving the rest of the file.
+    local _k _path _v
+    _k=$1
+    _v=$2
+    case "$_k" in confirmed|session|crash|clean) ;; *) return 1 ;; esac
+    _path="$DURANIUM_RUN/boot.env"
+    [ -r "$_path" ] || return 1
+    sed "s/^${_k}=.*/${_k}=${_v}/" "$_path" > "$_path.new.$$" || {
+        rm -f "$_path.new.$$"
+        return 1
+    }
+    sync 2>/dev/null || true
+    mv -f "$_path.new.$$" "$_path" || {
+        rm -f "$_path.new.$$"
+        return 1
+    }
+    return 0
+}
+
+# Per-slot durable record of the most recent userland boot, used for crash
+# detection on the next boot. Best effort: never fails the caller's boot.
+slot_boot_state_file() {
+    printf '%s/duranium/boot/%s.state\n' "$DURANIUM_STATE_MNT" "$1"
+}
+
+slot_boot_state_field() {
+    local _f
+    _f=$(slot_boot_state_file "$1") || return 1
+    [ -r "$_f" ] || return 1
+    sed -n "s/^$2=//p" "$_f" | head -n 1
+    return 0
+}
+
+slot_boot_state_write() {
+    # slot_boot_state_write <slot> <boot_id> <pending> <confirmed>
+    #                       <session> <crash> <clean>
+    local _dir _f _slot
+    _slot=$1
+    _f=$(slot_boot_state_file "$_slot") || return 1
+    _dir=$(dirname "$_f")
+    dur_mkdir "$_dir" || return 1
+    dur_atomic_write_text "$_f" "slot=$_slot
+boot_id=$2
+pending=$3
+confirmed=$4
+session=$5
+crash=$6
+clean=$7
+updated_at=$(dur_timestamp)"
+}
+
+slot_boot_state_sync() {
+    # Mirror the current boot.env flags into the durable STATE record.
+    # $2 is the clean-shutdown value (boot-clean sets it to 1).
+    local _clean _confirmed _crash _pending _session _slot
+    _slot=$1
+    _clean=$2
+    _pending=$(slot_boot_env_field pending)
+    _confirmed=$(slot_boot_env_field confirmed)
+    _session=$(slot_boot_env_field session)
+    _crash=$(slot_boot_env_field crash)
+    slot_boot_state_write "$_slot" "$(dur_boot_id)" "${_pending:-0}" \
+        "${_confirmed:-0}" "${_session:-0}" "${_crash:-0}" "$_clean"
+}
+
+slot_journal() {
+    # Append-only evidence journal (boot confirmations, sign-ins, crashes,
+    # clean shutdowns, detections). Never fails the caller.
+    [ -d "$DURANIUM_STATE_MNT/duranium" ] || return 0
+    printf '%s %s\n' "$(dur_timestamp)" "$1" \
+        >> "$DURANIUM_STATE_MNT/duranium/bootlog" 2>/dev/null || true
+    return 0
+}
+
+# Boot-confirmation handshake.
+#
+# Booting a slot and proving the boot usable are different events:
+#   * systemd-boot counting covers failures before userland;
+#   * a kernel that loads but freezes partway through userland looks
+#     identical to a completed boot to anything that only reads metadata.
+# The booted OS therefore confirms its own boot in two stages, and
+# mark-good refuses a pending slot whose current boot was never confirmed.
+slot_boot_confirmed() {
+    [ "$(slot_boot_env_field slot)" = "$1" ] || return 1
+    [ "$(slot_boot_env_field confirmed)" = "1" ] || return 1
+    return 0
+}
+
+slot_boot_confirm() {
+    local _arg _slot
+    _slot=$(slot_booted) || {
+        dur_err "boot-confirm: cannot determine the booted slot"
+        return 1
+    }
+    dur_is_slot "$_slot" || { dur_err "boot-confirm: invalid slot"; return 1; }
+    _arg=${1:-}
+    if [ -n "$_arg" ]; then
+        dur_is_slot "$_arg" || { dur_err "boot-confirm: invalid slot"; return 1; }
+        [ "$_arg" = "$_slot" ] || {
+            dur_err "boot-confirm: slot $_arg is not the currently booted slot ($_slot)"
+            return 1
+        }
+    fi
+    [ -r "$DURANIUM_RUN/boot.env" ] || {
+        dur_err "boot-confirm: no boot record for this boot; boot-record must run first"
+        return 1
+    }
+    [ "$(slot_boot_env_field slot)" = "$_slot" ] || {
+        dur_err "boot-confirm: boot record is for slot $(slot_boot_env_field slot), not $_slot"
+        return 1
+    }
+    # Crash detection: if the previous boot of this slot reached userland
+    # but never shut down cleanly, that is evidence of a crash/power loss.
+    slot_boot_detect_unclean "$_slot"
+    # Set only the confirmed flag. A full rewrite here would reset the
+    # crash/session flags recorded earlier in the same boot (e.g. by
+    # session-crash) and erase the evidence mark-good relies on.
+    slot_boot_env_set confirmed 1 || return 1
+    slot_boot_state_sync "$_slot" 0 || true
+    slot_journal "CONFIRM slot=$_slot boot_id=$(dur_boot_id) pending=$(slot_boot_env_field pending)"
+    return 0
+}
+
+# Sign-in gate (stage 2). The desktop/sign-in manager calls this once the
+# user environment is actually up after sign-in. V1 ships the API as a
+# stub: nothing in the fixture calls it, and mark-good only requires it
+# when DURANIUM_REQUIRE_SESSION=1.
+slot_session_confirm() {
+    local _arg _slot
+    _slot=$(slot_booted) || {
+        dur_err "session-confirm: cannot determine the booted slot"
+        return 1
+    }
+    dur_is_slot "$_slot" || { dur_err "session-confirm: invalid slot"; return 1; }
+    _arg=${1:-}
+    if [ -n "$_arg" ]; then
+        dur_is_slot "$_arg" || { dur_err "session-confirm: invalid slot"; return 1; }
+        [ "$_arg" = "$_slot" ] || {
+            dur_err "session-confirm: slot $_arg is not the currently booted slot ($_slot)"
+            return 1
+        }
+    fi
+    [ "$(slot_boot_env_field slot)" = "$_slot" ] || {
+        dur_err "session-confirm: boot record is for slot $(slot_boot_env_field slot), not $_slot"
+        return 1
+    }
+    [ "$(slot_boot_env_field confirmed)" = "1" ] || {
+        dur_err "session-confirm: boot is not confirmed; boot-confirm must run first"
+        return 1
+    }
+    slot_boot_env_set session 1 || return 1
+    slot_boot_state_sync "$_slot" 0 || true
+    slot_journal "SESSION slot=$_slot boot_id=$(dur_boot_id)"
+    return 0
+}
+
+# Crash report from the booted OS: the user environment crashed after
+# sign-in. A pending slot is immediately BAD (the OS itself judged the
+# candidate unusable; invariant: no automatic retry). A GOOD slot is
+# recorded but never demoted: GOOD changes only through explicit
+# operator action (V1 policy).
+slot_session_crash() {
+    local _reason _slot
+    _slot=$(slot_booted) || {
+        dur_err "session-crash: cannot determine the booted slot"
+        return 1
+    }
+    dur_is_slot "$_slot" || { dur_err "session-crash: invalid slot"; return 1; }
+    _reason=${1:-unspecified}
+    _reason=$(printf '%s' "$_reason" | tr '\r\n\t' '   ')
+    [ -n "$_reason" ] || _reason=unspecified
+    slot_boot_env_set crash 1 || true
+    slot_boot_state_sync "$_slot" 0 || true
+    slot_journal "CRASH slot=$_slot boot_id=$(dur_boot_id) reason=$_reason"
+    meta_load_global || return 1
+    if [ "$MG_pending_slot" = "$_slot" ]; then
+        if slot_mark_bad "$_slot"; then
+            slot_log "session crash on pending slot $_slot marked BAD"
+            return 0
+        fi
+        return 1
+    fi
+    slot_log "session crash recorded for slot $_slot (status unchanged)"
+    return 0
+}
+
+# Called by the OS on a clean shutdown. The next boot uses the durable
+# record to distinguish a clean restart from a crash/power loss.
+slot_boot_clean() {
+    local _slot
+    _slot=$(slot_booted) || {
+        dur_err "boot-clean: cannot determine the booted slot"
+        return 1
+    }
+    dur_is_slot "$_slot" || { dur_err "boot-clean: invalid slot"; return 1; }
+    slot_boot_env_set clean 1 || true
+    slot_boot_state_sync "$_slot" 1 || true
+    slot_journal "CLEAN slot=$_slot boot_id=$(dur_boot_id)"
+    return 0
+}
+
+slot_boot_detect_unclean() {
+    local _prev_boot _prev_clean _prev_confirmed _prev_session _slot
+    _slot=$1
+    _prev_boot=$(slot_boot_state_field "$_slot" boot_id)
+    [ -n "$_prev_boot" ] || return 0
+    [ "$_prev_boot" != "$(dur_boot_id)" ] || return 0
+    _prev_clean=$(slot_boot_state_field "$_slot" clean)
+    [ "$_prev_clean" = "1" ] && return 0
+    _prev_confirmed=$(slot_boot_state_field "$_slot" confirmed)
+    _prev_session=$(slot_boot_state_field "$_slot" session)
+    case "$_prev_confirmed$_prev_session" in
+        *1*) ;;
+        *) return 0 ;;
+    esac
+    dur_warn "previous boot of slot $_slot (boot ${_prev_boot}) reached userland but did not shut down cleanly"
+    slot_journal "DETECTED slot=$_slot boot_id=$_prev_boot unclean_shutdown=1"
+    return 0
 }
 
 slot_log() {
@@ -98,6 +334,18 @@ slot_reconcile() {
         if meta_load_slot "$_slot"; then
             case "$MS_status" in
                 PENDING)
+                    # A PENDING slot that is not named by the pending pointer
+                    # is a stale orphan: its +N entry outranks the GOOD active
+                    # slot and hijacks every boot, and nothing will ever
+                    # confirm it. The only legitimate pointer-less window is
+                    # mid-update, which update_in_progress covers (and
+                    # slot_reconcile_interrupted_update already handled).
+                    if [ "$MG_pending_slot" != "$_slot" ] && [ -z "$MG_update_in_progress" ]; then
+                        dur_warn "pending slot $_slot is not the pending slot; marking stale orphan BAD"
+                        meta_update_slot "$_slot" status=BAD known_good=0 boot_attempts_remaining=0 pending_boot_id= || return 1
+                        _changed=1
+                        continue
+                    fi
                     _estate=$(bootloader_entry_state "$_slot")
                     case "$_estate" in
                         none)
@@ -153,27 +401,50 @@ slot_reconcile() {
                     esac
                     ;;
                 GOOD)
-                    # A missing entry is repaired by the final sync.
+                    # A GOOD slot must have a plain counterless entry. A
+                    # missing entry, or a leftover boot counter from a crash
+                    # between the mark-good metadata commit and
+                    # bootloader_sync, is repaired by the final sync.
+                    _estate=$(bootloader_entry_state "$_slot")
+                    case "$_estate" in
+                        good) ;;
+                        *) _changed=1 ;;
+                    esac
                     ;;
             esac
         fi
     done
 
-    # A slot that is GOOD but still listed as pending means mark-good committed
-    # partially. Complete it safely.
-    if [ -n "$MG_pending_slot" ] && meta_load_slot "$MG_pending_slot"; then
-        if [ "$MS_status" = "GOOD" ]; then
-            _new=$MG_pending_slot
-            _old=$MG_active_slot
-            _fallback=$_old
-            [ -n "$_fallback" ] || _fallback=$MG_last_known_good_slot
-            if [ "$_fallback" = "$_new" ]; then
-                _fallback=""
+    # A pending pointer must name a PENDING slot. GOOD means mark-good
+    # committed partially: complete it safely. Anything else (BAD, UNKNOWN,
+    # invalid metadata) is a stale pointer, e.g. global metadata restored
+    # from an older backup; left alone it would block all future updates,
+    # so clear it.
+    if [ -n "$MG_pending_slot" ]; then
+        if meta_load_slot "$MG_pending_slot"; then
+            if [ "$MS_status" = "GOOD" ]; then
+                _new=$MG_pending_slot
+                _old=$MG_active_slot
+                _fallback=$_old
+                [ -n "$_fallback" ] || _fallback=$MG_last_known_good_slot
+                if [ "$_fallback" = "$_new" ]; then
+                    _fallback=""
+                fi
+                if [ -n "$_fallback" ] && ! slot_is_good "$_fallback"; then
+                    _fallback=""
+                fi
+                meta_update_global active_slot="$_new" pending_slot="" fallback_slot="$_fallback" last_known_good_slot="$_new" || return 1
+                meta_load_global || return 1
+                _changed=1
+            elif [ "$MS_status" != "PENDING" ]; then
+                dur_warn "pending slot $MG_pending_slot is $MS_status; clearing stale pending pointer"
+                meta_update_global pending_slot="" || return 1
+                meta_load_global || return 1
+                _changed=1
             fi
-            if [ -n "$_fallback" ] && ! slot_is_good "$_fallback"; then
-                _fallback=""
-            fi
-            meta_update_global active_slot="$_new" pending_slot="" fallback_slot="$_fallback" last_known_good_slot="$_new" || return 1
+        else
+            dur_warn "pending slot $MG_pending_slot has invalid metadata; clearing stale pending pointer"
+            meta_update_global pending_slot="" || return 1
             meta_load_global || return 1
             _changed=1
         fi
@@ -296,6 +567,28 @@ slot_boot_record() {
     return 2
 }
 
+# Verify the slot partition against MS_image_sha256 (slot metadata must be
+# loaded). Used at boot time when enabled and always before mark-good.
+#
+# The hash recorded at install time covers exactly the installed image bytes,
+# not the partition: partitions are provisioned with headroom, and the
+# partition tail contains whatever was there before. Hash the recorded
+# image_size; fall back to the device size only for metadata that predates
+# image_size (dir-backend slots, whose file is exactly the image).
+slot_verify_root() {
+    local _dev _r _size _slot
+    _slot=$1
+    _dev=$(backend_slot_dev "$_slot") || return 1
+    if dur_is_uint "${MS_image_size:-}" && [ "$MS_image_size" -gt 0 ]; then
+        _size=$MS_image_size
+    else
+        _size=$(backend_part_size "$_dev") || return 1
+    fi
+    _r=$(dur_sha256_prefix "$_dev" "$_size") || return 1
+    [ "$_r" = "$MS_image_sha256" ] || { DURANIUM_LAST_ERROR="root image hash mismatch for $_slot"; return 1; }
+    return 0
+}
+
 slot_boot_verify() {
     local _dev _i _initramfs _k _kernel _r _size _slot
     _slot=$1
@@ -313,10 +606,7 @@ slot_boot_verify() {
     [ "$_k" = "$MS_boot_kernel_sha256" ] || { DURANIUM_LAST_ERROR="kernel hash mismatch for $_slot"; return 1; }
     [ "$_i" = "$MS_boot_initramfs_sha256" ] || { DURANIUM_LAST_ERROR="initramfs hash mismatch for $_slot"; return 1; }
     if [ "$DURANIUM_VERIFY_ROOT_ON_BOOT" = "1" ] && [ "$DURANIUM_BACKEND" != "dir" ]; then
-        _dev=$(backend_slot_dev "$_slot") || return 1
-        _size=$(backend_part_size "$_dev") || return 1
-        _r=$(dur_sha256_prefix "$_dev" "$_size") || return 1
-        [ "$_r" = "$MS_image_sha256" ] || { DURANIUM_LAST_ERROR="root image hash mismatch for $_slot"; return 1; }
+        slot_verify_root "$_slot" || return 1
     fi
     return 0
 }
@@ -355,6 +645,12 @@ slot_boot_fail() {
         fi
         meta_update_global active_slot="$_fallback" fallback_slot="$_fallback" pending_slot="" || return 2
         bootloader_sync || return 2
+        # A GOOD fallback was selected and synced. Rebooting lets systemd-boot
+        # pick the fallback entry (sort-key 20/30 beats recovery's 90);
+        # recovery is for when no normal slot remains (docs/03).
+        if [ -n "$_fallback" ]; then
+            return 0
+        fi
         return 2
     fi
     return 2
@@ -384,6 +680,10 @@ slot_mark_good() {
         return 1
     }
     _boot_id=$(dur_boot_id)
+    [ "$_boot_id" != "unknown" ] || {
+        dur_err "mark-good: kernel boot ID is unavailable; refusing to confirm"
+        return 1
+    }
     [ -n "$MS_pending_boot_id" ] || {
         dur_err "mark-good: slot $_slot has no recorded boot ID"
         return 1
@@ -392,6 +692,33 @@ slot_mark_good() {
         dur_err "mark-good: boot ID does not match the pending boot"
         return 1
     }
+    # Stage 1 of the handshake: the booted OS must have confirmed this boot.
+    # A kernel that freezes partway through userland never confirms, and a
+    # premature mark-good without the OS handshake is refused.
+    if ! slot_boot_confirmed "$_slot"; then
+        dur_err "mark-good: the booted OS has not confirmed this boot (duranium boot-confirm)"
+        return 1
+    fi
+    # Stage 2 (the sign-in gate): required only when the deployment enables
+    # it. V1 defaults to off; the Alloy desktop sets DURANIUM_REQUIRE_SESSION=1
+    # so a pending slot is confirmed only after the user environment is up.
+    if [ "${DURANIUM_REQUIRE_SESSION:-0}" = "1" ] && \
+       [ "$(slot_boot_env_field session)" != "1" ]; then
+        dur_err "mark-good: the session has not confirmed sign-in for this boot (duranium session-confirm)"
+        return 1
+    fi
+    # A boot whose environment reported a crash must not be confirmed.
+    [ "$(slot_boot_env_field crash)" != "1" ] || {
+        dur_err "mark-good: this boot recorded a session crash; refusing to confirm"
+        return 1
+    }
+    # Confirm the root image still matches the hash recorded at install
+    # time. Kernel/initramfs are re-verified on every boot; the root image
+    # otherwise is not, and mark-good is the one-shot moment to check it.
+    if ! slot_verify_root "$_slot"; then
+        dur_err "mark-good: ${DURANIUM_LAST_ERROR:-root image verification failed for slot $_slot}"
+        return 1
+    fi
     if ! health_check; then
         dur_err "mark-good: health check failed; slot $_slot remains PENDING"
         return 1
@@ -458,19 +785,33 @@ slot_mark_bad() {
 }
 
 slot_select() {
-    local _active _fallback _force _last _slot
+    local _active _fallback _force _last _pending _slot
     _slot=$1
     _force=${2:-0}
     dur_is_slot "$_slot" || { dur_err "select: invalid slot"; return 1; }
     meta_load_global || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
     meta_load_slot "$_slot" || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
-    if [ "$MS_status" != "GOOD" ] && [ "$_force" != "1" ]; then
-        dur_err "select: slot $_slot is $MS_status, not GOOD (use --force only in recovery)"
-        return 1
+    if [ "$MS_status" != "GOOD" ]; then
+        if [ "$_force" != "1" ]; then
+            dur_err "select: slot $_slot is $MS_status, not GOOD (use --force only in recovery)"
+            return 1
+        fi
+        # Force is an operator decision made from recovery, and it is only
+        # meaningful for a PENDING slot: BAD/UNKNOWN slots get no boot entry
+        # from bootloader_sync, so "succeeding" would silently change nothing.
+        recovery_require_context || {
+            dur_err "select: --force is only available in the recovery environment"
+            return 1
+        }
+        case "$MS_status" in
+            PENDING) ;;
+            *) dur_err "select: cannot force-select a $MS_status slot"; return 1 ;;
+        esac
     fi
     _active=$MG_active_slot
     _fallback=$MG_fallback_slot
     _last=$MG_last_known_good_slot
+    _pending=$MG_pending_slot
     if [ "$MS_status" = "GOOD" ]; then
         _fallback=$_active
         if [ -z "$_fallback" ] || [ "$_fallback" = "$_slot" ]; then
@@ -481,10 +822,21 @@ slot_select() {
         fi
         _last=$_slot
         _active=$_slot
+        _pending=""
     else
-        _active=$_slot
+        # Forced selection is a recovery-operator decision to give a slot
+        # another chance. Re-arm it as a fresh pending transaction (fresh
+        # attempts, pending pointer, new +N entry): merely pointing active at
+        # a non-GOOD slot would write metadata that no boot flow honors.
+        meta_update_slot "$_slot" status=PENDING known_good=0 \
+            boot_attempts_remaining="$MS_max_boot_attempts" \
+            pending_boot_id= || return 1
+        [ "$_active" = "$_slot" ] && _active=""
+        [ "$_fallback" = "$_slot" ] && _fallback=""
+        [ "$_last" = "$_slot" ] && _last=""
+        _pending=$_slot
     fi
-    meta_update_global active_slot="$_active" fallback_slot="$_fallback" last_known_good_slot="$_last" || return 1
+    meta_update_global active_slot="$_active" pending_slot="$_pending" fallback_slot="$_fallback" last_known_good_slot="$_last" || return 1
     bootloader_sync || return 1
     slot_log "selected slot $_slot active=$_active fallback=$_fallback"
     return 0

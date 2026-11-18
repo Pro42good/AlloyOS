@@ -28,32 +28,27 @@ bootloader_init() {
 bootloader_remove_slot() {
     local _base _f
     _base=$(bootloader_entry_base "$1") || return 1
-    for _f in "$DURANIUM_ENTRIES_DIR/$_base"*.conf; do
+    # Only exact slot entry names are removed; unrelated files that merely
+    # share the prefix (e.g. "duranium-b-notes.conf") must survive.
+    for _f in "$DURANIUM_ENTRIES_DIR/$_base.conf" \
+              "$DURANIUM_ENTRIES_DIR/$_base"+*.conf; do
         [ -e "$_f" ] && rm -f "$_f"
     done
     sync 2>/dev/null || true
     return 0
 }
 
-bootloader_entry_path() {
-    local _base _f
-    _base=$(bootloader_entry_base "$1") || return 1
-    for _f in "$DURANIUM_ENTRIES_DIR/$_base"*.conf; do
-        if [ -e "$_f" ]; then
-            printf '%s\n' "$_f"
-            return 0
-        fi
-    done
-    return 1
-}
-
 # Prints "none", "good", or the numeric tries-left suffix.
+# Only exact slot entry names are considered: duranium-<slot>.conf and
+# duranium-<slot>+<tries>[-<done>].conf. Any other file in the entries
+# directory is ignored; it is not this slot's entry.
 bootloader_entry_state() {
     local _base _f _found _left _name _rest _slot _suffix
     _slot=$1
     _base=$(bootloader_entry_base "$_slot") || return 1
     _found=""
-    for _f in "$DURANIUM_ENTRIES_DIR/$_base"*.conf; do
+    for _f in "$DURANIUM_ENTRIES_DIR/$_base.conf" \
+              "$DURANIUM_ENTRIES_DIR/$_base"+*.conf; do
         [ -e "$_f" ] || continue
         if [ -n "$_found" ]; then
             printf 'duplicate\n'
@@ -69,23 +64,14 @@ bootloader_entry_state() {
         '') printf 'good\n' ;;
         +*)
             _suffix=${_rest#+}
+            case "$_suffix" in
+                *[!0-9-]*) printf 'malformed\n'; return 0 ;;
+            esac
             _left=${_suffix%%-*}
             dur_is_uint "$_left" || { printf 'malformed\n'; return 0; }
             printf '%s\n' "$_left"
             ;;
         *) printf 'malformed\n' ;;
-    esac
-    return 0
-}
-
-bootloader_read_attempts() {
-    local _state
-    _state=$(bootloader_entry_state "$1")
-    case "$_state" in
-        none) printf '0\n' ;;
-        good) printf '%s\n' "$DURANIUM_MAX_BOOT_ATTEMPTS" ;;
-        malformed|duplicate) return 1 ;;
-        *) printf '%s\n' "$_state" ;;
     esac
     return 0
 }
@@ -214,13 +200,13 @@ bootloader_fake_boot() {
         _name=$(basename "$_f")
         _name=${_name%.conf}
         case "$_name" in
-            duranium-a*) _slot=A ;;
-            duranium-b*) _slot=B ;;
-            duranium-recovery*) _slot=recovery ;;
+            duranium-a|duranium-a+*) _slot=A ;;
+            duranium-b|duranium-b+*) _slot=B ;;
+            duranium-recovery|duranium-recovery+*) _slot=recovery ;;
             *) continue ;;
         esac
         case "$_name" in
-            *+*)
+            duranium-a+*|duranium-b+*)
                 _suffix=${_name#*+}
                 _left=${_suffix%%-*}
                 _done=0
