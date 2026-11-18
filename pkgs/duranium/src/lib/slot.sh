@@ -592,6 +592,7 @@ slot_verify_root() {
 slot_boot_verify() {
     local _dev _i _initramfs _k _kernel _r _size _slot
     _slot=$1
+    backend_init || return 1
     meta_load_slot "$_slot" || return 1
     case "$MS_status" in
         GOOD|PENDING) ;;
@@ -658,6 +659,10 @@ slot_boot_fail() {
 
 slot_mark_good() {
     local _boot_id _booted _fallback _old_active _old_fallback _slot
+    # Resolve slot devices (mark-good may run outside any command that
+    # already initialized the backend; in the guest the device environment
+    # is unset and devices must be resolved by label here).
+    backend_init || { dur_err "mark-good: $DURANIUM_LAST_ERROR"; return 1; }
     _slot=${1:-}
     [ -n "$_slot" ] || _slot=$(slot_booted) || {
         dur_err "mark-good: cannot determine the booted slot"

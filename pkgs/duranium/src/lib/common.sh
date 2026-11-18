@@ -87,12 +87,32 @@ dur_sha256_stdin() {
 }
 
 # Hash exactly $2 bytes from the beginning of file/device $1.
+#
+# Read in bounded chunks. On some platforms (observed with QEMU/hvf on macOS)
+# very large sequential reads from a block device can return stale bytes even
+# while small reads of the same blocks return the correct content, which would
+# silently corrupt install read-back and root-image verification. 1 MiB chunked
+# reads are correct everywhere and cost the same overall. dd's skip counts
+# blocks of bs, so the loop passes the chunk index; the final short chunk is
+# trimmed to the exact remaining length.
 dur_sha256_prefix() {
-    local _file _size
+    local _chunk _file _i _left _size
     _file=$1
     _size=$2
     dur_is_uint "$_size" || return 1
-    head -c "$_size" "$_file" 2>/dev/null | dur_sha256_stdin
+    _chunk=1048576
+    {
+        _i=0
+        while [ "$((_i * _chunk))" -lt "$_size" ]; do
+            _left=$((_size - _i * _chunk))
+            if [ "$_left" -ge "$_chunk" ]; then
+                dd if="$_file" bs="$_chunk" count=1 skip="$_i" 2>/dev/null || exit 1
+            else
+                dd if="$_file" bs="$_chunk" count=1 skip="$_i" 2>/dev/null | head -c "$_left" || exit 1
+            fi
+            _i=$((_i + 1))
+        done
+    } | dur_sha256_stdin
 }
 
 dur_mkdir() {

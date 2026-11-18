@@ -41,4 +41,20 @@ if [ -n "${DURANIUM_EFI_BOOT:-}" ]; then
 fi
 
 set -- "$@" alpine:3.20 sh /src/qemu/build-in-container.sh
-"$@"
+"$@" || exit 1
+
+# The fixture files are written by the build container through virtiofs. On
+# macOS the host page cache can keep stale (zero) pages for regions Docker
+# wrote, which QEMU then serves to the guest as garbage: slot partitions read
+# back differently depending on how recently the file was written. Rewriting
+# the files from inside a fresh container and renaming over the originals
+# gives them new inodes, so the host page cache is repopulated from settled
+# content. Linux hosts are unaffected but this is harmless there.
+for _img in duranium-fixture.img testdata.img; do
+    if ! docker run --rm -v "$OUT:/out" --platform linux/arm64 alpine:3.20 sh -c "
+        cp /out/$_img /out/$_img.settle && mv -f /out/$_img.settle /out/$_img && sync
+    "; then
+        printf 'build-fixture: cannot settle %s for host visibility\n' "$_img" >&2
+        exit 1
+    fi
+done
