@@ -1,69 +1,98 @@
-<div align="center">
-  <a href="https://github.com/Pro42good/AlloyOS"><img src="assets/Classic_Prime_Market.svg" alt="Alloy OS (codename: Classic Prime Market)" width="200"></a>
-  <h1>Alloy OS</h1>
-  <p>A lightweight Linux OS for laptops and tablets, built on postmarketOS.</p>
+<img src="assets/Classic_Prime_Market.svg" width="112" alt="Alloy OS logo">
 
-[![License](https://img.shields.io/github/license/Pro42good/AlloyOS?style=flat-square)](LICENSE)
-[![Last Commit](https://img.shields.io/github/last-commit/Pro42good/AlloyOS?style=flat-square)](https://github.com/Pro42good/AlloyOS/commits/main)
-[![Development](https://img.shields.io/badge/status-early_development-orange?style=flat-square)](https://github.com/Pro42good/AlloyOS)
+# Alloy OS
+
+**A lightweight Linux OS for laptops and tablets, built on postmarketOS.**
+
+[Build & test](#build-and-test) · [Duranium](#duranium-immutable-ab-updates) · [Performance](#desktop-performance-goals) · [Roadmap](#roadmap) · [Report an issue](https://github.com/Pro42good/AlloyOS/issues/new)
+
+[![Development status](https://img.shields.io/badge/status-early%20development-orange?style=flat-square)](#project-status)
 [![postmarketOS](https://img.shields.io/badge/base-postmarketOS-1d99f3?style=flat-square)](https://postmarketos.org)
+[![License](https://img.shields.io/github/license/Pro42good/AlloyOS?style=flat-square)](LICENSE)
 
-</div>
+---
 
-Alloy is meant to be a full desktop you can use with a keyboard or a
-touchscreen. It starts with a small Linux base, brings up runtimes as apps need
-them, and aims to give those resources back once you're done. The Lenovo
-IdeaPad Duet (Krane) is a test device for that design. [Krane lab notes](devices/kukui-krane/README.md)
+Alloy is being built for touch and keyboard, with web, native Linux, and
+Android apps sharing one desktop. The idea is to start small, bring up app
+runtimes when they're needed, and get those resources back when you're done.
+The OS itself updates as an image, with a working slot available if the new
+one fails to boot.
 
-## What works today
+## Project status
 
-- **Alloy Core** has a measured headless aarch64 QEMU baseline. Build 1001
-  recorded **113 MiB of RAM at boot** and **8.67 idle wakeups per second**. The
-  baseline also uses ZRAM with a disk swapfile for overflow. [Baseline notes](devices/kukui-krane/docs/ALLOY-BASELINE-1000-1001.md)
+| Area | Where it stands |
+| --- | --- |
+| **Alloy Core** | Measured headless aarch64 QEMU baseline with ZRAM and disk swap for overflow. [Core build and test tools](devices/kukui-krane/alloy/README.md) |
+| **Duranium V1** | Signed installs, boot confirmation, fallback, and recovery demonstrated in a minimal UEFI/systemd-boot QEMU fixture. Full Core integration and hardware validation are ahead. |
+| **Desktop** | The compositor, native diagnostic shell, app runtimes, and Chromium SystemUI are planned. [Roadmap](#roadmap) |
+
+The Lenovo IdeaPad Duet (Krane) is an early test device. The QEMU lab uses
+virtual hardware, and the Duet has a different boot chain and drivers.
+[Krane lab](devices/kukui-krane/README.md) · [QEMU vs. Krane](devices/kukui-krane/docs/QEMU_VS_KRANE.md)
+
+---
+
+## Build and test
+
+For the headless system, start with the Core build guide. It covers the image
+recipe, development profiles, and the tests for system behavior and idle
+activity. [Build Alloy Core](devices/kukui-krane/alloy/README.md)
+
+Duranium’s separate QEMU fixture exercises normal updates, interrupted
+installs, corrupt boot files, and recovery. The fixture tooling is on the
+Duranium development branch.
+
+---
 
 ## Duranium (immutable A/B updates)
 
-Duranium V1 is in development. The current prototype has demonstrated signed
-offline updates, boot confirmation, fallback, and recovery in a minimal
-UEFI/systemd-boot QEMU fixture. Full Alloy Core integration and testing on
-physical hardware are still ahead.
+If Alloy is running from slot A, Duranium verifies the signed update and writes
+it to slot B. B gets a trial boot and becomes active after the OS passes its
+health checks and marks the slot good. If B runs out of boot attempts, the
+bootloader can return to A. Declared persistent data lives on a separate
+`STATE` partition, and the recovery shell can repair or reinstall an OS slot.
 
-If you're running from slot A, Duranium installs the signed OS image into slot B
-and leaves A ready to boot. B gets a trial boot and becomes the active slot
-after it passes the health checks and is marked good. If B uses up its boot
-attempts, the bootloader can return to A. A separate `STATE` partition holds
-declared persistent data across updates and rollbacks, and a recovery shell can
-repair or reinstall a system slot.
-
-APK is a build input for the host image. The plan is for **MAI** to install apps
-and manage their dependencies, while **MAC** builds and trims packages. One
-option under consideration is for MAI to install existing `.apk` packages into
-an isolated runtime with its own filesystem and package database.
-
-## Roadmap
-
-1. Build `alloyd` and the system services for identity, permissions, app
-   lifecycle, resource management, telemetry, health, and hardware.
-2. Define a shared app identity for web, native Linux, and Android apps.
-   Build the Wayland compositor and a small native diagnostic desktop around
-   it. Test input, suspend, audio, networking, and updates on real hardware.
-3. Add ACR for Linux app compatibility, bring up XWayland and Waydroid on
-   demand, and build out MAI and MAC.
-4. Use ASHT to tune policies from real hardware measurements. Build SystemUI
-   on stock Chromium and measure the actual shell workload before tuning
-   Chromium for it.
-5. Finish the touch and keyboard desktop, integrate Android apps into the
-   shell and store, and harden updates, recovery, and factory reset for
-   everyday use.
+APK is a build input for the host image. **MAI** is planned as the app installer
+and dependency manager, while **MAC** will build and trim packages. One option
+under consideration is letting MAI install existing `.apk` packages into an
+isolated app environment with its own filesystem and package database.
 
 ## Desktop performance goals
 
-The finished desktop should settle back to **25 or fewer running services**
-and **under 100 interrupts per second** at idle, with low CPU use measured
-separately. **Around 200 MiB of idle RAM** is a stretch goal, including the RAM
-that ZRAM actually occupies.
+The headless Alloy 1001 QEMU image recorded **113 MiB of RAM at boot** and
+**8.67 idle wakeups per second**. [Baseline measurements](devices/kukui-krane/docs/ALLOY-BASELINE-1000-1001.md)
 
-The test is to use the desktop, close the apps, and see how far CPU and memory
-drop again. The native diagnostic desktop gives us a measurement before
-Chromium SystemUI enters the picture. Stock ChromeOS and stock postmarketOS on
-the same Duet are planned comparison points.
+| Metric | Goal for the finished desktop |
+| --- | --- |
+| Running services at idle | 25 or fewer |
+| Interrupts at idle | Under 100 per second |
+| CPU at idle | Low sustained use, measured separately from interrupts |
+| RAM at idle | Around 200 MiB as a stretch goal, counting the RAM used by ZRAM |
+
+The test is to use the desktop, close the apps, and measure where CPU and memory
+settle. The native diagnostic shell gives us a baseline before Chromium enters
+the picture. Stock ChromeOS and postmarketOS on the same Duet are planned
+comparison points.
+
+---
+
+## Roadmap
+
+1. **System services.** Build `alloyd` and the services for sessions,
+   permissions, hardware, resource management, health, and telemetry.
+2. **App model and native desktop.** Define a shared app identity, build the
+   compositor and diagnostic shell, then exercise input, display, suspend,
+   audio, networking, and updates on real hardware.
+3. **App compatibility and packages.** Build out ACR, add Android runtime
+   integration, and develop MAI and MAC. Bring up optional runtimes when apps
+   need them.
+4. **Device tuning and SystemUI.** Use ASHT to tune policies with hardware
+   measurements. Build SystemUI on stock Chromium and measure that workload
+   before optimizing the browser for it.
+5. **Everyday use.** Finish the desktop and software store, integrate Android
+   apps into the shell, and harden updates, recovery, and factory reset.
+
+## License
+
+See [LICENSE](LICENSE) for the project and [asset licenses](assets/LICENSES/)
+for artwork.
