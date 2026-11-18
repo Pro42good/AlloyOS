@@ -12,6 +12,8 @@ case "${PORT:-2222}" in *[!0-9]*|"") echo "bad PORT"; exit 2 ;; esac
 IMG="$1"; SERIAL="$2"; PIDF="$3"; PORT="${4:-2222}"; VARS="${5:-images/firmware/vars-pmos.fd}"
 CODE_FW="/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
 
+[ -e "$VARS" ] || dd if=/dev/zero of="$VARS" bs=1m count=64 status=none
+
 exec qemu-system-aarch64 \
   -M virt,highmem=on \
   -accel hvf \

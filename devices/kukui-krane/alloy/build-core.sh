@@ -10,9 +10,11 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 KH="$(cd "$(dirname "$0")" && pwd)/known_hosts"
 SRC="${1:-$REPO/images/pmos-qemu-aarch64.qcow2}"
 OUT="${2:-$REPO/alloy/core/alloy-core.qcow2}"
-# BASE=phosh (default, GUI lineage) or console (headless/Nura base)
-BASE="${BASE:-phosh}"
-case "$BASE" in phosh) STRIP=01-strip ;; console) STRIP=01-strip-nura ;; *) echo "BASE must be phosh|console"; exit 2 ;; esac
+case "${BASE:-phosh}" in
+  phosh) STRIP=01-strip; PROFILE=core ;;
+  console) STRIP=01-strip-nura; PROFILE=core-nura ;;
+  *) echo "BASE must be phosh or console" >&2; exit 2 ;;
+esac
 W="$REPO/alloy/build"
 LOGS="$W/logs"; mkdir -p "$LOGS" "$(dirname "$OUT")"
 PORT=2222
@@ -27,7 +29,12 @@ PUB_B64="$(base64 < "$HOME/.ssh/id_ed25519.pub" | tr -d '\n')"   # shell-safe al
 # the guest post-bootstrap if you want per-build secrets.)
 : "${PMOS_PASS:?set PMOS_PASS to the image user password (fresh pmOS default: see README)}"
 
-cp "$REPO/baselines/0007/vars.fd" "$W/vars.fd"
+VARS_SEED="${VARS:-$REPO/baselines/0007/vars.fd}"
+if [ -f "$VARS_SEED" ]; then
+  cp "$VARS_SEED" "$W/vars.fd"
+else
+  rm -f "$W/vars.fd"
+fi
 PREV="$SRC"
 N=0
 for STEP in 00-keys "$STRIP" 02-filecuts 03-hwdb 04-tuning 05-swap 06-modprune 07-configs; do
@@ -98,6 +105,6 @@ qemu-img convert -O qcow2 -c "$W/stage8.qcow2" "$OUT"   # -c: compressed core
 rm -f "$W"/s*.qcow2 "$W"/stage*.qcow2 "$W/qemu.pid"
 
 echo "== gates"
-"$REPO/alloy/regression-test.sh" "$OUT"
-"$REPO/alloy/quiescence-test.sh" "$OUT" core
+VARS="$W/vars.fd" "$REPO/alloy/regression-test.sh" "$OUT" "$PROFILE"
+VARS="$W/vars.fd" "$REPO/alloy/quiescence-test.sh" "$OUT" "$PROFILE"
 echo "== CORE build complete: $OUT"

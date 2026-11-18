@@ -13,11 +13,25 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 IMG="${PMOS_IMG:-$SCRIPT_DIR/../images/pmos-qemu-aarch64.qcow2}"
 BREW_FW="/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
-VARS="$SCRIPT_DIR/../images/firmware/vars-pmos.fd"
+VARS="${PMOS_VARS:-$SCRIPT_DIR/../images/firmware/vars-pmos.fd}"
 MODE="${1:-gui}"
+SSH_PORT="${PMOS_SSH_PORT:-2222}"
+NET="user,id=net0"
+case "$SSH_PORT" in
+  off) ;;
+  *[!0-9]*) echo "PMOS_SSH_PORT must be a port number or off" >&2; exit 2 ;;
+  *)
+    [ "$SSH_PORT" -ge 1 ] && [ "$SSH_PORT" -le 65535 ] ||
+      { echo "PMOS_SSH_PORT must be between 1 and 65535" >&2; exit 2; }
+    NET="$NET,hostfwd=tcp:127.0.0.1:$SSH_PORT-:22"
+    ;;
+esac
 
 [ -f "$IMG" ] || { echo "image not found: $IMG"; exit 1; }
-[ -f "$VARS" ] || { dd if=/dev/zero of="$VARS" bs=1m count=64 status=none; }
+[ -f "$VARS" ] || {
+  mkdir -p "$(dirname "$VARS")"
+  dd if=/dev/zero of="$VARS" bs=1m count=64 status=none
+}
 
 # SSH is bound to loopback only (hostfwd tcp:127.0.0.1:...), never 0.0.0.0 —
 # see SECURITY_AUDIT_2026-09-09.md HIGH-1.
@@ -34,7 +48,7 @@ set -- \
   -device qemu-xhci \
   -device usb-kbd \
   -device usb-tablet \
-  -netdev user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22 \
+  -netdev "$NET" \
   -device virtio-net-pci,netdev=net0
 
 if [ "$MODE" = "gui" ]; then
