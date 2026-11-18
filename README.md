@@ -1,14 +1,20 @@
-<img src="assets/Classic_Prime_Market.svg" width="112" alt="Alloy OS logo">
-
-# Alloy OS
-
-**A lightweight Linux OS for laptops and tablets, built on postmarketOS.**
-
-[Build & test](#build-and-test) · [Duranium](#duranium-immutable-ab-updates) · [Performance](#desktop-performance-goals) · [Roadmap](#roadmap) · [Report an issue](https://github.com/Pro42good/AlloyOS/issues/new)
-
-[![Development status](https://img.shields.io/badge/status-early%20development-orange?style=flat-square)](#project-status)
-[![postmarketOS](https://img.shields.io/badge/base-postmarketOS-1d99f3?style=flat-square)](https://postmarketos.org)
-[![License](https://img.shields.io/github/license/Pro42good/AlloyOS?style=flat-square)](LICENSE)
+<div align="center">
+  <img src="assets/Classic_Prime_Market.svg" alt="Alloy OS (codename: Classic Prime Market)" width="200">
+  <h1>Alloy OS</h1>
+  <p><strong>A lightweight Linux OS for laptops and tablets, built on postmarketOS.</strong></p>
+  <p>
+    <a href="#build-and-test">Build &amp; test</a> ·
+    <a href="#duranium-immutable-ab-updates">Duranium</a> ·
+    <a href="#desktop-performance-goals">Performance</a> ·
+    <a href="#roadmap">Roadmap</a> ·
+    <a href="https://github.com/Pro42good/AlloyOS/issues/new">Report an issue</a>
+  </p>
+  <p>
+    <a href="#project-status"><img src="https://img.shields.io/badge/status-early%20development-orange?style=flat-square" alt="Early development"></a>
+    <a href="https://postmarketos.org"><img src="https://img.shields.io/badge/base-postmarketOS-1d99f3?style=flat-square" alt="Built on postmarketOS"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/Pro42good/AlloyOS?style=flat-square" alt="License"></a>
+  </p>
+</div>
 
 ---
 
