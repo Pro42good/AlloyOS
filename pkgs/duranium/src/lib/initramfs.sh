@@ -131,6 +131,16 @@ initramfs_main() {
     fi
 
     dur_mkdir "$DURANIUM_NEWROOT" || initramfs_reboot_or_poweroff
+    # Debug: hash one deep block of the slot device BEFORE mounting it, to
+    # distinguish device-content divergence from mount-time modification.
+    # The block at 48MiB is where the suite has observed read divergence.
+    if [ -n "${DURANIUM_DEBUG_PREMOUNT_HASH:-}" ]; then
+        _dbgdev=$(backend_slot_dev "$_slot" 2>/dev/null || true)
+        if [ -n "$_dbgdev" ]; then
+            printf 'PREMOUNT %s %s\n' "$_slot" \
+                "$(dur_sha256_prefix "$_dbgdev" 134217728 2>/dev/null | dur_sha256_stdin | awk '{print $1}')" >&2
+        fi
+    fi
     if ! dur_is_mounted "$DURANIUM_NEWROOT"; then
         if ! backend_mount_slot_ro "$_slot" "$DURANIUM_NEWROOT"; then
             _why=${DURANIUM_LAST_ERROR:-slot mount failed}
