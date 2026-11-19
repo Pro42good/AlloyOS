@@ -155,6 +155,15 @@ test_init() {
     export DURANIUM_STATE_SCHEMA=1
     export DURANIUM_TEST_MODE=1
     export DURANIUM_FSCK=0
+
+    # Deterministic health tests on hosts with real systemd: the CLI's
+    # systemctl fallback would consult the HOST's systemd state. Stub it so
+    # the marker check is the only signal (matches the fixture, which has
+    # no systemd).
+    mkdir -p "$T/bin"
+    printf '#!/bin/sh\nexit 1\n' > "$T/bin/systemctl"
+    chmod +x "$T/bin/systemctl"
+    export PATH="$T/bin:$PATH"
     export DURANIUM_VERIFY_ROOT_ON_BOOT=0
     export DURANIUM_HEALTH_CORE_MARKER="$T/run/alloy/core-ready"
     export DURANIUM_HEALTH_REQUIRE_ROOT_RO=0

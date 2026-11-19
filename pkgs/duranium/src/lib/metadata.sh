@@ -444,14 +444,18 @@ meta_unlock() {
 
 meta_update_slot() {
     local _rc _slot
+    # Explicit reset: dash's "local x" without an assignment inherits the
+    # caller's value (busybox ash does not), so relying on ${_rc:-0} after
+    # "local _rc" silently skips the update when a caller holds _rc.
+    _rc=0
     _slot=$1
     shift
     meta_lock || return 1
-    meta_load_slot "$_slot" || { _rc=1; }
-    if [ "${_rc:-0}" -eq 0 ]; then
+    meta_load_slot "$_slot" || _rc=1
+    if [ "$_rc" -eq 0 ]; then
         if meta_apply_updates MS slot "$@" && \
            { MS_generation=$((MS_generation + 1)); MS_updated_at=$(dur_timestamp); meta_write_slot; }; then
-            _rc=0
+            :
         else
             _rc=1
         fi
