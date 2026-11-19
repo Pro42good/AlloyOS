@@ -93,3 +93,18 @@ Duranium V1 is a proof, not a polished product. These are deliberate limits.
 
 Chromium, SystemUI, Waydroid, ASHT, GUI update tools, polished user recovery,
 network update services, and changes to the frozen Alloy Core build.
+
+## Root-image hashing
+
+- The root image hash (`image_sha256` over `image_size`) is verified only at
+  install read-back and in the initramfs before the slot is mounted. It is
+  never verified from the booted OS: a mounted ext4's raw bytes are not a
+  function of the installed image (journal/superblock buffers in the
+  block-device page cache; read-write mounts rewrite superblock fields and
+  all backup superblocks).
+- PENDING slots are always root-hashed pre-mount; GOOD slots only when
+  `DURANIUM_VERIFY_ROOT_ON_BOOT=1`.
+- This is corruption detection, not anti-tamper: the metadata that carries
+  the digest is checksummed but unsigned, so a local root can rewrite both
+  the image and its digest. Real tamper resistance needs dm-verity or signed
+  boot metadata.

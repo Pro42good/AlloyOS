@@ -42,32 +42,34 @@ rm -f "$T/run/alloy/core-ready"
 assert_fail "missing core readiness refuses mark-good" dk mark-good B
 assert_slot_status "B stays PENDING after missing core" B PENDING
 
-# mark-good must verify the root image hash recorded at install time; a
-# slot whose root silently corrupted after install must stay PENDING.
-test_init mark-good-root-hash
+# mark-good must NOT hash the root device: it runs on the mounted root, and
+# a mounted ext4's raw bytes are not a function of the installed image (the
+# kernel's journal/superblock buffers live in the block-device page cache
+# and read-only mounts never write them back). The root hash belongs to the
+# pre-mount boot check (slot_boot_verify), which is the next block's job.
+test_init mark-good-no-root-hash
 make_key
 make_artifact "$T/art-b" 2.0 B-v2
-assert_eq "boot GOOD A" "A" "$(sim_boot)"
+assert_eq "boot GOOD A (no-root-hash)" "A" "$(sim_boot)"
 assert_ok "install into B" dk update install "$T/art-b"
 assert_eq "boot pending B" "B" "$(sim_boot)"
-printf 'corrupt\n' >> "$T/root/slots/B.img"
-assert_fail "root image hash mismatch refuses mark-good" dk mark-good B
-assert_slot_status "B stays PENDING after root mismatch" B PENDING
+assert_ok "OS confirms the boot" dk boot-confirm
+printf 'post-install-garbage\n' >> "$T/root/slots/B.img"
+assert_ok "mark-good succeeds without reading the device" dk mark-good B
+assert_slot_status "B is GOOD" B GOOD
 
-# image_sha256 covers exactly image_size bytes, not the slot "partition":
-# partitions are provisioned with headroom, and the tail must not be hashed.
-# (Regression: hashing the whole partition made mark-good permanently refuse
-# every image smaller than its partition.)
-test_init mark-good-image-size
+# The root hash runs pre-mount in slot_boot_verify: corruption inside the
+# installed image must be rejected there, while partition headroom beyond
+# image_size is tolerated (image_sha256 covers exactly image_size bytes).
+test_init boot-verify-root-hash
 make_key
 make_artifact "$T/art-b" 2.0 B-v2
-assert_eq "boot GOOD A (image-size)" "A" "$(sim_boot)"
+assert_eq "boot GOOD A (verify)" "A" "$(sim_boot)"
 assert_ok "install into B" dk update install "$T/art-b"
+assert_ok "pre-mount verify accepts a fresh install" dk boot-verify B
 printf 'partition-headroom-garbage\n' >> "$T/root/slots/B.img"
-assert_eq "boot pending B with partition headroom" "B" "$(sim_boot)"
-assert_ok "OS confirms the boot" dk boot-confirm
-assert_ok "mark-good ignores bytes beyond image_size" dk mark-good B
-assert_slot_status "B is GOOD despite partition headroom" B GOOD
-assert_slot_field "B recorded image_size" B image_size 1048576
+assert_ok "headroom beyond image_size is tolerated" dk boot-verify B
+printf 'corrupt\n' | dd of="$T/root/slots/B.img" bs=1 seek=4096 conv=notrunc status=none
+assert_fail "corruption inside image_size is rejected pre-mount" dk boot-verify B
 
 test_done

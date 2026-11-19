@@ -62,10 +62,13 @@ reported separately as `booted slot`.
 `image_size` records the exact byte length of the installed system image.
 `image_sha256` covers exactly those bytes, **not** the whole slot partition:
 partitions are provisioned with headroom, and the partition tail contains
-whatever preceded the install. Verification (`mark-good`, and boot-time
-verification when enabled) hashes exactly `image_size` bytes. Metadata
-written before `image_size` existed is verified against the full device
-size, which only matches when the image fills the partition.
+whatever preceded the install. The hash is verified at exactly two points:
+install read-back and the initramfs boot check, both **before the slot is
+mounted** (a mounted ext4's raw bytes legitimately diverge from the image:
+journal and superblock buffers live in the block-device page cache and
+read-only mounts never write them back). It is never verified from the
+booted OS. Metadata written before `image_size` existed is verified against
+the full device size, which only matches when the image fills the partition.
 
 ## States
 

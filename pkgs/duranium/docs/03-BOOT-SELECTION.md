@@ -136,9 +136,15 @@ requires all of the following:
 6. when `DURANIUM_REQUIRE_SESSION=1`, the sign-in gate confirmed the user
    session (`duranium session-confirm`, the `session=1` flag);
 7. this boot has no reported session crash (`duranium session-crash`);
-8. the slot's root image still hashes to `image_sha256` over exactly
-   `image_size` bytes (the hash recorded at install time);
-9. health checks pass.
+8. health checks pass.
+
+There is deliberately no root-image hash in this list: mark-good runs on
+the mounted root, and a mounted ext4's raw bytes are not a function of the
+installed image (the kernel keeps journal/superblock buffers in the
+block-device page cache; read-only mounts never write them back). Byte
+integrity is verified where it is sound: install-time readback on the
+unmounted target, and the mandatory pre-mount root hash in the initramfs
+(see "Boot sequence invariants" below).
 
 Health checks cover:
 

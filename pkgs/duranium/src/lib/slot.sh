@@ -568,17 +568,21 @@ slot_boot_record() {
 }
 
 # Verify the slot partition against MS_image_sha256 (slot metadata must be
-# loaded). Used at boot time when enabled and always before mark-good.
-#
-# The hash recorded at install time covers exactly the installed image bytes,
-# not the partition: partitions are provisioned with headroom, and the
-# partition tail contains whatever was there before. Hash the recorded
-# image_size; fall back to the device size only for metadata that predates
-# image_size (dir-backend slots, whose file is exactly the image).
+# loaded). Valid ONLY while the slot device is unmounted: a mounted ext4's
+# raw bytes diverge from the installed image (kernel journal/superblock
+# buffers in the block-device page cache; read-only mounts do not write them
+# back), so this must never be called from the booted OS on its own root.
+# Called from the initramfs before backend_mount_slot_ro, and from the CLI
+# (boot-verify) where callers pass an unmounted slot.
 slot_verify_root() {
     local _dev _r _size _slot
     _slot=$1
+    backend_init || return 1
     _dev=$(backend_slot_dev "$_slot") || return 1
+    if update_target_mounted "$_dev"; then
+        DURANIUM_LAST_ERROR="refusing to hash a mounted slot device ($_dev)"
+        return 1
+    fi
     if dur_is_uint "${MS_image_size:-}" && [ "$MS_image_size" -gt 0 ]; then
         _size=$MS_image_size
     else
@@ -606,9 +610,21 @@ slot_boot_verify() {
     _i=$(dur_sha256_file "$_initramfs") || return 1
     [ "$_k" = "$MS_boot_kernel_sha256" ] || { DURANIUM_LAST_ERROR="kernel hash mismatch for $_slot"; return 1; }
     [ "$_i" = "$MS_boot_initramfs_sha256" ] || { DURANIUM_LAST_ERROR="initramfs hash mismatch for $_slot"; return 1; }
-    if [ "$DURANIUM_VERIFY_ROOT_ON_BOOT" = "1" ] && [ "$DURANIUM_BACKEND" != "dir" ]; then
-        slot_verify_root "$_slot" || return 1
-    fi
+    # Root hash, strictly pre-mount (the initramfs calls this before
+    # backend_mount_slot_ro). PENDING slots are always verified: it is the
+    # one gate standing between a corrupted install and confirmation.
+    # GOOD slots are re-verified per boot only when the deployment opts in
+    # (hashing large real-world images on every boot is costly).
+    case "$MS_status" in
+        PENDING)
+            slot_verify_root "$_slot" || return 1
+            ;;
+        GOOD)
+            if [ "$DURANIUM_VERIFY_ROOT_ON_BOOT" = "1" ]; then
+                slot_verify_root "$_slot" || return 1
+            fi
+            ;;
+    esac
     return 0
 }
 
@@ -717,13 +733,12 @@ slot_mark_good() {
         dur_err "mark-good: this boot recorded a session crash; refusing to confirm"
         return 1
     }
-    # Confirm the root image still matches the hash recorded at install
-    # time. Kernel/initramfs are re-verified on every boot; the root image
-    # otherwise is not, and mark-good is the one-shot moment to check it.
-    if ! slot_verify_root "$_slot"; then
-        dur_err "mark-good: ${DURANIUM_LAST_ERROR:-root image verification failed for slot $_slot}"
-        return 1
-    fi
+    # No raw root-image hash here: mark-good runs on the mounted root, and a
+    # mounted ext4's raw bytes are not a function of the installed image
+    # (the kernel keeps journal/superblock buffers in the block-device page
+    # cache and read-only mounts never write them back). Byte integrity is
+    # verified where it is sound: install-time readback on the unmounted
+    # target, and the mandatory pre-mount root hash in the initramfs.
     if ! health_check; then
         dur_err "mark-good: health check failed; slot $_slot remains PENDING"
         return 1
