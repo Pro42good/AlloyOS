@@ -15,11 +15,15 @@ initramfs_reboot_or_poweroff() {
 initramfs_load_modules() {
     # Kernels that build FAT as a module (e.g. Alpine linux-virt on x86_64)
     # cannot mount the FAT ESP without it. The modules are optional: the
-    # aarch64 fixture kernel has everything built in and ships none.
+    # aarch64 fixture kernel has everything built in and ships none. Load
+    # order matters: busybox insmod does not resolve dependencies, and
+    # vfat requires the nls codepages and fat first.
     local _m
-    for _m in fat vfat nls_cp437 nls_ascii; do
+    for _m in nls_cp437 nls_ascii fat vfat; do
         if [ -e "/modules/$_m.ko" ]; then
-            insmod "/modules/$_m.ko" 2>/dev/null || true
+            if ! insmod "/modules/$_m.ko" 2>/dev/null; then
+                printf 'duranium: warning: insmod %s failed\n' "$_m" >&2
+            fi
         fi
     done
     return 0
