@@ -52,28 +52,65 @@ fi
 [ -n "$LOG" ] || LOG=/tmp/duranium-qemu.log
 mkdir -p "$(dirname "$LOG")"
 
+QEMUARCH=${DURANIUM_QEMU_ARCH:-aarch64}
 EDK2=${DURANIUM_EDK2_CODE:-}
 if [ -z "$EDK2" ]; then
-    for _c in /opt/homebrew/share/qemu/edk2-aarch64-code.fd \
-              /usr/share/qemu/edk2-aarch64-code.fd \
-              /usr/share/AAVMF/AAVMF_CODE.fd; do
-        [ -r "$_c" ] && { EDK2=$_c; break; }
-    done
+    case "$QEMUARCH" in
+        x86_64)
+            for _c in /usr/share/OVMF/OVMF_CODE_4M.fd \
+                      /usr/share/OVMF/OVMF_CODE.fd \
+                      /usr/share/ovmf/OVMF_CODE.fd; do
+                [ -r "$_c" ] && { EDK2=$_c; break; }
+            done
+            ;;
+        *)
+            for _c in /opt/homebrew/share/qemu/edk2-aarch64-code.fd \
+                      /usr/share/qemu/edk2-aarch64-code.fd \
+                      /usr/share/AAVMF/AAVMF_CODE.fd; do
+                [ -r "$_c" ] && { EDK2=$_c; break; }
+            done
+            ;;
+    esac
 fi
-[ -n "$EDK2" ] && [ -r "$EDK2" ] || { printf 'run-vm: EDK2 aarch64 firmware not found\n' >&2; exit 2; }
+[ -n "$EDK2" ] && [ -r "$EDK2" ] || { printf 'run-vm: %s firmware not found\n' "$QEMUARCH" >&2; exit 2; }
 
 # Native mode needs the QEMU binary resolved before the command line is
 # built (dash's set -u rejects the unset reference otherwise).
 if [ "$CONTMODE" != "1" ]; then
-    QEMU=${QEMU_SYSTEM_AARCH64:-qemu-system-aarch64}
+    case "$QEMUARCH" in
+        x86_64) QEMU=${QEMU_SYSTEM_X86_64:-qemu-system-x86_64} ;;
+        *) QEMU=${QEMU_SYSTEM_AARCH64:-qemu-system-aarch64} ;;
+    esac
     command -v "$QEMU" >/dev/null 2>&1 || { printf 'run-vm: %s not found\n' "$QEMU" >&2; exit 2; }
 fi
+
+case "$QEMUARCH" in
+    x86_64) MACHINE_ARGS="-M pc" ;;
+    *) MACHINE_ARGS="-M virt,highmem=on" ;;
+esac
 
 if [ -z "$VARS" ]; then
     VARS=$(mktemp "${TMPDIR:-/tmp}/duranium-vars.XXXXXX")
 fi
 if [ ! -s "$VARS" ]; then
-    dd if=/dev/zero of="$VARS" bs=1M count=64 status=none
+    case "$QEMUARCH" in
+        x86_64)
+            # OVMF needs a real variable-store template, not a zeroed file.
+            _ovmf_vars=""
+            for _v in "${EDK2%/*}/OVMF_VARS_4M.fd" "${EDK2%/*}/OVMF_VARS.fd"; do
+                [ -r "$_v" ] && { _ovmf_vars=$_v; break; }
+            done
+            if [ -n "$_ovmf_vars" ]; then
+                cp "$_ovmf_vars" "$VARS"
+            else
+                printf 'run-vm: OVMF vars template not found next to %s\n' "$EDK2" >&2
+                exit 2
+            fi
+            ;;
+        *)
+            dd if=/dev/zero of="$VARS" bs=1M count=64 status=none
+            ;;
+    esac
 fi
 
 # Resolve every backing file to a mountable host directory plus a fixed inner
@@ -99,12 +136,15 @@ fi
 
 case "$(uname -s)" in
     Linux)
-        if [ -w /dev/kvm ] && [ "$(uname -m)" = "aarch64" ]; then
+        if [ -w /dev/kvm ] && [ "$(uname -m)" = "$QEMUARCH" ]; then
             ACCEL_ARGS="-accel kvm -cpu host"
         else
-            # KVM cannot emulate a foreign architecture: x86_64 hosts run
-            # the aarch64 guest under TCG.
-            ACCEL_ARGS="-accel tcg -cpu cortex-a72"
+            # KVM cannot emulate a foreign architecture; a guest whose arch
+            # differs from the host runs under TCG.
+            case "$QEMUARCH" in
+                x86_64) ACCEL_ARGS="-accel tcg -cpu max" ;;
+                *) ACCEL_ARGS="-accel tcg -cpu cortex-a72" ;;
+            esac
         fi
         ;;
     Darwin) ACCEL_ARGS="-accel hvf -cpu host" ;;
@@ -140,7 +180,7 @@ if [ "$CONTMODE" = "1" ]; then
             exec qemu-system-aarch64 \"\$@\"
             " \
         _qemu \
-        -M virt,highmem=on -accel tcg -cpu cortex-a72 -smp 2 -m "$MEMORY" \
+        $MACHINE_ARGS -accel tcg -cpu cortex-a72 -smp 2 -m "$MEMORY" \
         -drive if=pflash,format=raw,readonly=on,file=/stage/.edk2.fd \
         -drive if=pflash,format=raw,file=/stage/vars.fd \
         -drive "if=none,id=sys,file=/stage/disk.img,format=raw,cache=none,aio=threads" \
@@ -157,7 +197,7 @@ if [ "$CONTMODE" = "1" ]; then
     fi
 else
     set -- "$QEMU" \
-        -M virt,highmem=on $ACCEL_ARGS -smp 2 -m "$MEMORY" \
+        $MACHINE_ARGS $ACCEL_ARGS -smp 2 -m "$MEMORY" \
         -drive if=pflash,format=raw,readonly=on,file="$EDK2" \
         -drive if=pflash,format=raw,file="$VARS" \
         -drive "if=none,id=sys,file=$DISK,format=raw,cache=writethrough" \

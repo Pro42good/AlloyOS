@@ -7,9 +7,31 @@ SRC=${SRC:-/src}
 OUT=${OUT:-/out}
 BASELINE=${BASELINE:-/baseline}
 PROFILE=${PROFILE:-prod}
-HW=qemu-aarch64-virt
-ARCH=aarch64
 MAX_BOOT=3
+
+# Fixture architecture. The Duranium code is architecture-independent; only
+# the kernel, the UEFI boot manager and the console differ. The default
+# fixture is aarch64 (the target device architecture); an x86_64 fixture
+# (native KVM on x86_64 hosts, for fast functional verification) requires
+# DURANIUM_KERNEL and DURANIUM_EFI_BOOT (a systemd-bootx64.efi).
+FIX_ARCH=${DURANIUM_FIXTURE_ARCH:-aarch64}
+case "$FIX_ARCH" in
+    aarch64)
+        ARCH=aarch64
+        HW=qemu-aarch64-virt
+        CONSOLE=ttyAMA0
+        EFI_BOOT_NAME=BOOTAA64.EFI
+        SB_EFI=systemd-bootaa64.efi
+        ;;
+    x86_64)
+        ARCH=x86_64
+        HW=qemu-x86_64-pc
+        CONSOLE=ttyS0
+        EFI_BOOT_NAME=BOOTX64.EFI
+        SB_EFI=systemd-bootx64.efi
+        ;;
+    *) die "unknown fixture arch: $FIX_ARCH" ;;
+esac
 
 BOOT_MB=128
 RECOVERY_MB=128
@@ -28,7 +50,7 @@ log() { printf '==> %s\n' "$*"; }
 die() { printf 'build: error: %s\n' "$*" >&2; exit 1; }
 put() { _src=$1; _dst=$2; _mode=${3:-644}; mkdir -p "$(dirname "$_dst")"; cp "$_src" "$_dst"; chmod "$_mode" "$_dst"; }
 
-[ "$(uname -m)" = "aarch64" ] || die "fixture build must run on aarch64"
+[ "$(uname -m)" = "$ARCH" ] || die "fixture build must run on $ARCH (got $(uname -m))"
 
 log "installing build tools"
 apk update -q >/dev/null 2>&1
@@ -48,14 +70,14 @@ extract_from_baseline() {
     qemu-img convert -O raw "$_img" "$W/baseline.raw" >/dev/null
     dd if="$W/baseline.raw" of="$W/baseline-esp.img" bs=512 skip=2048 count=1048576 status=none
     mcopy -o -i "$W/baseline-esp.img" ::/vmlinuz "$W/vmlinuz"
-    mcopy -o -i "$W/baseline-esp.img" ::/EFI/BOOT/BOOTAA64.EFI "$W/systemd-bootaa64.efi"
+    mcopy -o -i "$W/baseline-esp.img" ::/EFI/BOOT/$EFI_BOOT_NAME "$W/$SB_EFI"
 }
 
 if [ -n "${DURANIUM_KERNEL:-}" ] && [ -r "${DURANIUM_KERNEL:-}" ]; then
     cp "$DURANIUM_KERNEL" "$W/vmlinuz"
-    [ -n "${DURANIUM_EFI_BOOT:-}" ] && [ -r "${DURANIUM_EFI_BOOT:-}" ] && cp "$DURANIUM_EFI_BOOT" "$W/systemd-bootaa64.efi"
+    [ -n "${DURANIUM_EFI_BOOT:-}" ] && [ -r "${DURANIUM_EFI_BOOT:-}" ] && cp "$DURANIUM_EFI_BOOT" "$W/$SB_EFI"
 fi
-if [ ! -s "$W/vmlinuz" ] || [ ! -s "$W/systemd-bootaa64.efi" ]; then
+if [ ! -s "$W/vmlinuz" ] || [ ! -s "$W/$SB_EFI" ]; then
     _base=""
     if [ -r "$BASELINE/alloy-1001-floor.qcow2" ]; then
         _base="$BASELINE/alloy-1001-floor.qcow2"
@@ -66,8 +88,16 @@ if [ ! -s "$W/vmlinuz" ] || [ ! -s "$W/systemd-bootaa64.efi" ]; then
     extract_from_baseline "$_base"
 fi
 [ -s "$W/vmlinuz" ] || die "kernel extraction failed"
-[ -s "$W/systemd-bootaa64.efi" ] || die "systemd-boot extraction failed"
-log "kernel: $(wc -c < "$W/vmlinuz") bytes; systemd-boot: $(wc -c < "$W/systemd-bootaa64.efi") bytes"
+[ -s "$W/$SB_EFI" ] || die "systemd-boot extraction failed"
+log "kernel: $(wc -c < "$W/vmlinuz") bytes; systemd-boot: $(wc -c < "$W/$SB_EFI") bytes"
+
+if [ "$ARCH" = "x86_64" ]; then
+    # No x86_64 baseline exists; the kernel and boot manager must be
+    # provided explicitly (e.g. the host distro kernel and Debian's
+    # systemd-boot-efi package).
+    [ -s "$W/vmlinuz" ] || die "x86_64 fixture requires DURANIUM_KERNEL"
+    [ -s "$W/$SB_EFI" ] || die "x86_64 fixture requires DURANIUM_EFI_BOOT (systemd-bootx64.efi)"
+fi
 
 # ---------------------------------------------------------------------------
 # Keys and artifacts
@@ -96,6 +126,9 @@ apk add --root "$BASE" --initdb --keys-dir /etc/apk/keys \
 put "$SRC/src/bin/duranium" "$BASE/usr/bin/duranium" 755
 for _f in "$SRC"/src/lib/*.sh; do put "$_f" "$BASE/usr/lib/duranium/$(basename "$_f")" 644; done
 put "$SRC/src/etc/duranium.conf" "$BASE/etc/duranium/duranium.conf" 644
+# The guest reads its console default from this config; align it with the
+# fixture architecture (a no-op for the default ttyAMA0).
+sed -i "s/console=ttyAMA0/console=$CONSOLE/" "$BASE/etc/duranium/duranium.conf"
 put "$SRC/src/etc/state.conf" "$BASE/etc/duranium/state.conf" 644
 put "$SRC/src/etc/health.d/10-core.sh" "$BASE/etc/duranium/health.d/10-core.sh" 644
 put "$SRC/qemu/guest-agent.sh" "$BASE/usr/local/bin/duranium-test" 755
@@ -167,6 +200,7 @@ put "$SRC/src/bin/duranium" "$IR/usr/bin/duranium" 755
 for _f in "$SRC"/src/lib/*.sh; do put "$_f" "$IR/usr/lib/duranium/$(basename "$_f")" 644; done
 put "$SRC/src/initramfs/init" "$IR/init" 755
 put "$SRC/src/etc/initramfs.conf" "$IR/etc/duranium/initramfs.conf" 644
+sed -i "s/console=ttyAMA0/console=$CONSOLE/" "$IR/etc/duranium/initramfs.conf"
 put "$SRC/src/etc/state.conf" "$IR/etc/duranium/state.conf" 644
 printf '%s\n' "$PROFILE" > "$IR/etc/duranium/profile"
 printf '%s\n' "$HW" > "$IR/etc/duranium/hardware-target"
@@ -194,7 +228,7 @@ rm -rf "$BS"
 mkdir -p "$BS/EFI/BOOT" "$BS/loader/entries" \
     "$BS/duranium/boot/A" "$BS/duranium/boot/B" "$BS/duranium/boot/recovery" \
     "$BS/duranium/slots"
-cp "$W/systemd-bootaa64.efi" "$BS/EFI/BOOT/BOOTAA64.EFI"
+cp "$W/$SB_EFI" "$BS/EFI/BOOT/$EFI_BOOT_NAME"
 for _s in A B recovery; do
     cp "$W/vmlinuz" "$BS/duranium/boot/$_s/vmlinuz"
 done
@@ -218,7 +252,7 @@ export DURANIUM_HARDWARE_TARGET="$HW"
 export DURANIUM_ARCH="$ARCH"
 export DURANIUM_STATE_SCHEMA=1
 export DURANIUM_MAX_BOOT_ATTEMPTS="$MAX_BOOT"
-export DURANIUM_CONSOLE=console=ttyAMA0
+export DURANIUM_CONSOLE=console=$CONSOLE
 export DURANIUM_EXTRA_CMDLINE=""
 export DURANIUM_KEYS_DIR="$OUT/keys"
 export DURANIUM_TEST_MODE=0
