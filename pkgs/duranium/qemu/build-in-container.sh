@@ -89,6 +89,18 @@ if [ "$ARCH" = "x86_64" ]; then
         cp /boot/vmlinuz-virt "$W/vmlinuz"
     fi
     [ -s "$W/$SB_EFI" ] || die "x86_64 fixture requires DURANIUM_EFI_BOOT (systemd-bootx64.efi)"
+    # linux-virt builds FAT as modules; harvest them (decompressed, busybox
+    # insmod reads plain .ko) so the initramfs can mount the FAT ESP.
+    mkdir -p "$W/ir-modules"
+    _kver=$(ls /lib/modules 2>/dev/null | head -n 1)
+    for _m in fat vfat nls_cp437 nls_ascii; do
+        _f=$(find "/lib/modules/$_kver" -name "$_m.ko*" 2>/dev/null | head -n 1)
+        [ -n "$_f" ] || continue
+        case "$_f" in
+            *.gz) zcat "$_f" > "$W/ir-modules/$_m.ko" ;;
+            *) cp "$_f" "$W/ir-modules/$_m.ko" ;;
+        esac
+    done
 elif [ ! -s "$W/vmlinuz" ] || [ ! -s "$W/$SB_EFI" ]; then
     _base=""
     if [ -r "$BASELINE/alloy-1001-floor.qcow2" ]; then
@@ -197,12 +209,18 @@ mkdir -p "$IR/bin" "$IR/sbin" "$IR/usr/bin" "$IR/usr/sbin" "$IR/usr/lib/duranium
 cp /bin/busybox.static "$IR/bin/busybox"
 for _a in sh ash mount umount mkdir rmdir cat echo printf sleep sync ls cp mv rm ln chmod date \
     basename dirname tr wc awk sed grep head tail cut sort find xargs sha256sum poweroff reboot \
-    switch_root true false test dd tee readlink uname; do
+    switch_root true false test dd tee readlink uname insmod rmmod zcat; do
     ln -sf busybox "$IR/bin/$_a"
 done
 put "$SRC/src/bin/duranium" "$IR/usr/bin/duranium" 755
 for _f in "$SRC"/src/lib/*.sh; do put "$_f" "$IR/usr/lib/duranium/$(basename "$_f")" 644; done
 put "$SRC/src/initramfs/init" "$IR/init" 755
+# Optional kernel modules for guests whose kernel builds FAT as a module
+# (the aarch64 baseline kernel has everything built in and ships none).
+if [ -d "$W/ir-modules" ]; then
+    mkdir -p "$IR/modules"
+    cp "$W"/ir-modules/*.ko "$IR/modules/" 2>/dev/null || true
+fi
 put "$SRC/src/etc/initramfs.conf" "$IR/etc/duranium/initramfs.conf" 644
 sed -i "s/console=ttyAMA0/console=$CONSOLE/" "$IR/etc/duranium/initramfs.conf"
 put "$SRC/src/etc/state.conf" "$IR/etc/duranium/state.conf" 644

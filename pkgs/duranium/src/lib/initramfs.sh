@@ -12,6 +12,19 @@ initramfs_reboot_or_poweroff() {
     reboot -f 2>/dev/null || poweroff -f 2>/dev/null || exit 1
 }
 
+initramfs_load_modules() {
+    # Kernels that build FAT as a module (e.g. Alpine linux-virt on x86_64)
+    # cannot mount the FAT ESP without it. The modules are optional: the
+    # aarch64 fixture kernel has everything built in and ships none.
+    local _m
+    for _m in fat vfat nls_cp437 nls_ascii; do
+        if [ -e "/modules/$_m.ko" ]; then
+            insmod "/modules/$_m.ko" 2>/dev/null || true
+        fi
+    done
+    return 0
+}
+
 initramfs_mount_boot() {
     local _dev
     dur_mkdir "$DURANIUM_BOOT_MNT" || return 1
@@ -89,6 +102,7 @@ initramfs_main() {
     dur_mkdir "$DURANIUM_RUN" || true
 
     export DURANIUM_INITRAMFS=1
+    initramfs_load_modules
     initramfs_mount_boot || initramfs_reboot_or_poweroff
 
     _mode_file=$(cat /etc/duranium/mode 2>/dev/null || true)
