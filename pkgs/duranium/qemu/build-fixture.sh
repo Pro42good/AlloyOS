@@ -24,7 +24,7 @@ if ! command -v docker >/dev/null 2>&1; then
     exit 1
 fi
 
-set -- docker run --rm --platform "$PLATFORM" \
+set -- docker run --rm --platform "$PLATFORM" --dns 9.9.9.9 --dns 1.1.1.1 \
     -v "$PKG_DIR:/src:ro" \
     -v "$OUT:/out" \
     -e PROFILE="${DURANIUM_FIXTURE_PROFILE:-prod}" \
