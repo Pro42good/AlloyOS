@@ -89,11 +89,12 @@ if [ "$ARCH" = "x86_64" ]; then
         cp /boot/vmlinuz-virt "$W/vmlinuz"
     fi
     [ -s "$W/$SB_EFI" ] || die "x86_64 fixture requires DURANIUM_EFI_BOOT (systemd-bootx64.efi)"
-    # linux-virt builds FAT as modules; harvest them (decompressed, busybox
-    # insmod reads plain .ko) so the initramfs can mount the FAT ESP.
+    # linux-virt builds virtio_blk and FAT as modules; harvest them
+    # (decompressed, busybox insmod reads plain .ko) so the initramfs can
+    # see the disk and mount the FAT ESP.
     mkdir -p "$W/ir-modules"
     _kver=$(ls /lib/modules 2>/dev/null | head -n 1)
-    for _m in fat vfat nls_cp437 nls_ascii; do
+    for _m in virtio_blk fat vfat nls_cp437 nls_ascii; do
         _f=$(find "/lib/modules/$_kver" -name "$_m.ko*" 2>/dev/null | head -n 1)
         [ -n "$_f" ] || continue
         case "$_f" in
