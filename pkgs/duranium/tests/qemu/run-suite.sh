@@ -138,6 +138,16 @@ run_scenario() {
     else
         copy_disk "$FIXTURE" "$_disk"
     fi
+    # Corrupt once, before the boot loop: the guest's writes across boots
+    # (reinstalls!) must survive; re-corrupting per boot would destroy them.
+    if [ "$_pre_corrupt" = "both" ]; then
+        corrupt_slot "$_disk" "$A_OFFSET_MB"
+        corrupt_slot "$_disk" "$B_OFFSET_MB"
+    elif [ "$_pre_corrupt" = "a" ]; then
+        corrupt_slot "$_disk" "$A_OFFSET_MB"
+    elif [ "$_pre_corrupt" = "b" ]; then
+        corrupt_slot "$_disk" "$B_OFFSET_MB"
+    fi
 
     _n=0
     while [ "$_n" -lt "$_max_boots" ]; do
@@ -145,14 +155,6 @@ run_scenario() {
         _log="$_dir/boot-$_n.log"
         _vars="$_dir/vars-$_n.fd"
         printf '  boot %s/%s ... ' "$_n" "$_max_boots"
-        if [ "$_pre_corrupt" = "both" ]; then
-            corrupt_slot "$_disk" "$A_OFFSET_MB"
-            corrupt_slot "$_disk" "$B_OFFSET_MB"
-        elif [ "$_pre_corrupt" = "a" ]; then
-            corrupt_slot "$_disk" "$A_OFFSET_MB"
-        elif [ "$_pre_corrupt" = "b" ]; then
-            corrupt_slot "$_disk" "$B_OFFSET_MB"
-        fi
 
         "$RUNVM" $CONTFLAG --disk "$_disk" --testdata "$TESTDATA" \
             --log "$_log" --vars "$_vars" --timeout "$TIMEOUT"
