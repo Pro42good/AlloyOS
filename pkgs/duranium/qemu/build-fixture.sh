@@ -13,15 +13,22 @@ BASELINE=${DURANIUM_BASELINE:-"$REPO/devices/kukui-krane/baselines/1000"}
 
 mkdir -p "$OUT"
 
+case "${DURANIUM_FIXTURE_ARCH:-aarch64}" in
+    aarch64) PLATFORM=linux/arm64 ;;
+    x86_64) PLATFORM=linux/amd64 ;;
+    *) printf 'build-fixture: unknown DURANIUM_FIXTURE_ARCH\n' >&2; exit 1 ;;
+esac
+
 if ! command -v docker >/dev/null 2>&1; then
     printf 'build-fixture: Docker is required for ext4/FAT/GPT image construction\n' >&2
     exit 1
 fi
 
-set -- docker run --rm --platform linux/arm64 \
+set -- docker run --rm --platform "$PLATFORM" \
     -v "$PKG_DIR:/src:ro" \
     -v "$OUT:/out" \
-    -e PROFILE="${DURANIUM_FIXTURE_PROFILE:-prod}"
+    -e PROFILE="${DURANIUM_FIXTURE_PROFILE:-prod}" \
+    -e DURANIUM_FIXTURE_ARCH="${DURANIUM_FIXTURE_ARCH:-aarch64}"
 
 if [ -r "$BASELINE/alloy-1001-floor.qcow2" ]; then
     set -- "$@" -v "$BASELINE:/baseline:ro"
