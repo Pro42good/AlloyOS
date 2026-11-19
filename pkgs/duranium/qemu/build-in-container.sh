@@ -75,7 +75,9 @@ extract_from_baseline() {
 
 if [ -n "${DURANIUM_KERNEL:-}" ] && [ -r "${DURANIUM_KERNEL:-}" ]; then
     cp "$DURANIUM_KERNEL" "$W/vmlinuz"
-    [ -n "${DURANIUM_EFI_BOOT:-}" ] && [ -r "${DURANIUM_EFI_BOOT:-}" ] && cp "$DURANIUM_EFI_BOOT" "$W/$SB_EFI"
+fi
+if [ -n "${DURANIUM_EFI_BOOT:-}" ] && [ -r "${DURANIUM_EFI_BOOT:-}" ]; then
+    cp "$DURANIUM_EFI_BOOT" "$W/$SB_EFI"
 fi
 if [ "$ARCH" = "x86_64" ]; then
     # There is no x86_64 baseline. Prefer an explicitly provided kernel
