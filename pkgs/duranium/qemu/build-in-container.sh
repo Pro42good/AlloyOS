@@ -94,7 +94,7 @@ if [ "$ARCH" = "x86_64" ]; then
     # see the disk and mount the FAT ESP.
     mkdir -p "$W/ir-modules"
     _kver=$(ls /lib/modules 2>/dev/null | head -n 1)
-    for _m in virtio_blk fat vfat nls_cp437 nls_ascii; do
+    for _m in virtio_blk fat vfat nls_cp437 nls_ascii nls_utf8; do
         _f=$(find "/lib/modules/$_kver" -name "$_m.ko*" 2>/dev/null | head -n 1)
         [ -n "$_f" ] || continue
         case "$_f" in
