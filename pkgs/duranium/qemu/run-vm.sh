@@ -62,6 +62,13 @@ if [ -z "$EDK2" ]; then
 fi
 [ -n "$EDK2" ] && [ -r "$EDK2" ] || { printf 'run-vm: EDK2 aarch64 firmware not found\n' >&2; exit 2; }
 
+# Native mode needs the QEMU binary resolved before the command line is
+# built (dash's set -u rejects the unset reference otherwise).
+if [ "$CONTMODE" != "1" ]; then
+    QEMU=${QEMU_SYSTEM_AARCH64:-qemu-system-aarch64}
+    command -v "$QEMU" >/dev/null 2>&1 || { printf 'run-vm: %s not found\n' "$QEMU" >&2; exit 2; }
+fi
+
 if [ -z "$VARS" ]; then
     VARS=$(mktemp "${TMPDIR:-/tmp}/duranium-vars.XXXXXX")
 fi
@@ -165,13 +172,6 @@ else
     fi
 fi
 
-if [ "$CONTMODE" = "1" ]; then
-    :
-else
-    QEMU=${QEMU_SYSTEM_AARCH64:-qemu-system-aarch64}
-    command -v "$QEMU" >/dev/null 2>&1 || { printf 'run-vm: %s not found\n' "$QEMU" >&2; exit 2; }
-    set -- "$QEMU" "$@"
-fi
 if [ "$INTERACTIVE" = "1" ]; then
     exec "$@"
 fi
