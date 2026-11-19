@@ -65,7 +65,7 @@ set_scenario() {
         # Stream testdata from the host (never read through the shared
         # filesystem from inside the VM), then set the marker on the
         # VM-local copy with debugfs.
-        docker run -i --rm --platform linux/arm64 --dns 9.9.9.9 --dns 1.1.1.1 -v "$STAGE:/stage" \
+        docker run -i --rm --platform linux/arm64 ${DURANIUM_DOCKER_ARGS:-} --dns 9.9.9.9 --dns 1.1.1.1 -v "$STAGE:/stage" \
             alpine:3.20 sh -c "
             cat > /stage/testdata.img
             apk add -q e2fsprogs e2fsprogs-extra >/dev/null 2>&1
@@ -88,11 +88,11 @@ set_scenario() {
 # phantom verification failures later.
 stage_disk() {
     _want=$(sha256sum < "$FIXTURE" | awk '{print $1}')
-    docker run -i --rm --platform linux/arm64 --dns 9.9.9.9 --dns 1.1.1.1 -v "$STAGE:/stage" \
+    docker run -i --rm --platform linux/arm64 ${DURANIUM_DOCKER_ARGS:-} --dns 9.9.9.9 --dns 1.1.1.1 -v "$STAGE:/stage" \
         alpine:3.20 sh -c '
         cat > /stage/disk.img
         sync' < "$FIXTURE" || return 1
-    _got=$(docker run --rm --platform linux/arm64 --dns 9.9.9.9 --dns 1.1.1.1 -v "$STAGE:/stage" \
+    _got=$(docker run --rm --platform linux/arm64 ${DURANIUM_DOCKER_ARGS:-} --dns 9.9.9.9 --dns 1.1.1.1 -v "$STAGE:/stage" \
         alpine:3.20 sh -c 'apk add -q coreutils >/dev/null 2>&1; sha256sum /stage/disk.img | awk "{print \$1}"')
     if [ "$_want" != "$_got" ]; then
         printf 'run-suite: staged disk corrupt (want %s got %s)\n' "$_want" "$_got" >&2
@@ -104,7 +104,7 @@ corrupt_slot() {
     _disk=$1
     _offset=$2
     if [ -n "$CONTFLAG" ]; then
-        docker run --rm --platform linux/arm64 --dns 9.9.9.9 --dns 1.1.1.1 -v "$STAGE:/stage" alpine:3.20 sh -c "
+        docker run --rm --platform linux/arm64 ${DURANIUM_DOCKER_ARGS:-} --dns 9.9.9.9 --dns 1.1.1.1 -v "$STAGE:/stage" alpine:3.20 sh -c "
             dd if=/dev/zero of=/stage/disk.img bs=1M seek=$_offset count=1 conv=notrunc status=none
             sync" || return 1
     else
@@ -114,12 +114,12 @@ corrupt_slot() {
 
 # Container mode: fetch the VM-local serial log / disk to the host.
 fetch_log() {
-    docker run --rm --platform linux/arm64 --dns 9.9.9.9 --dns 1.1.1.1 -v "$STAGE:/stage" \
+    docker run --rm --platform linux/arm64 ${DURANIUM_DOCKER_ARGS:-} --dns 9.9.9.9 --dns 1.1.1.1 -v "$STAGE:/stage" \
         alpine:3.20 cat /stage/boot.log > "$1" 2>/dev/null
 }
 
 fetch_disk() {
-    docker run --rm --platform linux/arm64 --dns 9.9.9.9 --dns 1.1.1.1 -v "$STAGE:/stage" \
+    docker run --rm --platform linux/arm64 ${DURANIUM_DOCKER_ARGS:-} --dns 9.9.9.9 --dns 1.1.1.1 -v "$STAGE:/stage" \
         alpine:3.20 cat /stage/disk.img > "$1" 2>/dev/null
 }
 
