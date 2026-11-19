@@ -1,0 +1,16 @@
+#!/bin/busybox sh
+# Duranium initramfs PID 1.
+# The CLI becomes PID 1 so its switch_root() runs in the init process.
+
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sys /sys 2>/dev/null || true
+mount -t devtmpfs dev /dev 2>/dev/null || true
+mkdir -p /run
+mount -t tmpfs -o mode=755,nosuid,nodev tmpfs /run 2>/dev/null || true
+
+export DURANIUM_LIBDIR=/usr/lib/duranium
+export DURANIUM_CONFIG=/etc/duranium/initramfs.conf
+export DURANIUM_INITRAMFS=1
+
+exec /usr/bin/duranium initramfs-main

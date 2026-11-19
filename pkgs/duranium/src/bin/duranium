@@ -1,0 +1,339 @@
+#!/bin/sh
+# Duranium command-line interface.
+#
+# This is the single entry point used by the normal system, the initramfs, the
+# recovery environment, and the test suite.
+
+set -u
+
+DURANIUM_BIN_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -n "${DURANIUM_LIBDIR:-}" ]; then
+    LIBDIR=$DURANIUM_LIBDIR
+elif [ -d /usr/lib/duranium ]; then
+    LIBDIR=/usr/lib/duranium
+elif [ -d "$DURANIUM_BIN_DIR/../lib" ]; then
+    LIBDIR="$DURANIUM_BIN_DIR/../lib"
+else
+    printf 'duranium: cannot locate libraries\n' >&2
+    exit 1
+fi
+
+# shellcheck source=common.sh
+. "$LIBDIR/common.sh"
+# shellcheck source=config.sh
+. "$LIBDIR/config.sh"
+# shellcheck source=backend.sh
+. "$LIBDIR/backend.sh"
+# shellcheck source=metadata.sh
+. "$LIBDIR/metadata.sh"
+# shellcheck source=bootloader.sh
+. "$LIBDIR/bootloader.sh"
+# shellcheck source=health.sh
+. "$LIBDIR/health.sh"
+# shellcheck source=state.sh
+. "$LIBDIR/state.sh"
+# shellcheck source=slot.sh
+. "$LIBDIR/slot.sh"
+# shellcheck source=manifest.sh
+. "$LIBDIR/manifest.sh"
+# shellcheck source=update.sh
+. "$LIBDIR/update.sh"
+# shellcheck source=recovery.sh
+. "$LIBDIR/recovery.sh"
+# shellcheck source=initramfs.sh
+. "$LIBDIR/initramfs.sh"
+
+usage() {
+    cat <<'EOF'
+Duranium V1 - immutable A/B system update foundation
+
+Usage:
+  duranium status
+  duranium health check|report
+  duranium slot list|show A|B
+  duranium mark-good [A|B]
+  duranium mark-bad [A|B]
+  duranium slot select A|B [--force]
+  duranium boot-record A|B
+  duranium boot-confirm
+  duranium session-confirm
+  duranium session-crash [reason]
+  duranium boot-clean
+  duranium boot-reconcile
+  duranium boot-verify A|B
+  duranium boot-fail A|B [reason]
+  duranium update verify DIR [--allow-profile-mismatch]
+  duranium update install DIR [--allow-profile-mismatch] [--reboot]
+  duranium update show DIR
+  duranium state schema
+  duranium state migrate A|B
+  duranium manifest keygen DIR KEY_ID
+  duranium manifest sign DIR PRIVATE_KEY
+  duranium manifest verify DIR [--allow-profile-mismatch]
+  duranium manifest show DIR
+  duranium manifest install-key PUBLIC_KEY KEY_ID
+  duranium recovery status
+  duranium recovery inspect
+  duranium recovery select A|B [--force]
+  duranium recovery mark-good A|B
+  duranium recovery mark-bad A|B
+  duranium recovery reinstall --slot A|B --artifact DIR [--allow-profile-mismatch] [--reboot]
+  duranium recovery repair-boot
+  duranium recovery mount-state|umount-state
+  duranium recovery factory-reset --mode os|state|full --yes
+  duranium bootloader list|sync
+
+Configuration is loaded from $DURANIUM_CONFIG (default
+/etc/duranium/duranium.conf) with environment variables taking precedence.
+EOF
+}
+
+cmd_update() {
+    local _a _allow _dir _reboot _sub
+    _sub=${1:-}
+    shift || true
+    case "$_sub" in
+        verify)
+            _dir=${1:-}; [ -n "$_dir" ] || { dur_err "update verify: missing artifact directory"; return 1; }
+            _allow=0
+            [ "${2:-}" = "--allow-profile-mismatch" ] && _allow=1
+            update_verify "$_dir" "$_allow"
+            ;;
+        install)
+            _dir=${1:-}; [ -n "$_dir" ] || { dur_err "update install: missing artifact directory"; return 1; }
+            shift || true
+            _allow=0; _reboot=0
+            for _a in "$@"; do
+                case "$_a" in
+                    --allow-profile-mismatch) _allow=1 ;;
+                    --reboot) _reboot=1 ;;
+                    *) dur_err "update install: unknown option $_a"; return 1 ;;
+                esac
+            done
+            backend_init || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
+            update_install "$_dir" "$_allow" "$_reboot"
+            ;;
+        show)
+            manifest_show "${1:-}"
+            ;;
+        *) dur_err "update: unknown subcommand '$_sub'"; return 1 ;;
+    esac
+}
+
+cmd_manifest() {
+    local _allow _dir _sub
+    _sub=${1:-}
+    shift || true
+    case "$_sub" in
+        keygen)
+            manifest_keygen "${1:-}" "${2:-}"
+            ;;
+        sign)
+            manifest_sign "${1:-}" "${2:-}"
+            ;;
+        verify)
+            _dir=${1:-}; _allow=0
+            [ "${2:-}" = "--allow-profile-mismatch" ] && _allow=1
+            update_verify "$_dir" "$_allow"
+            ;;
+        show)
+            manifest_show "${1:-}"
+            ;;
+        install-key)
+            manifest_install_key "${1:-}" "${2:-}"
+            ;;
+        *) dur_err "manifest: unknown subcommand '$_sub'"; return 1 ;;
+    esac
+}
+
+cmd_state() {
+    local _rc _slot _sub
+    _sub=${1:-}
+    shift || true
+    case "$_sub" in
+        schema)
+            state_load_config || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
+            state_schema_get || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
+            ;;
+        migrate)
+            _slot=${1:-}
+            [ -n "$_slot" ] || _slot=$(slot_booted) || { dur_err "state migrate: cannot determine slot"; return 1; }
+            state_migrate_boot "$_slot"
+            _rc=$?
+            if [ "$_rc" -eq 3 ]; then
+                if [ "$DURANIUM_TEST_MODE" = "1" ]; then
+                    dur_err "migration failed; test mode: not rebooting"
+                    return 3
+                fi
+                dur_err "migration failed; rebooting"
+                sync 2>/dev/null || true
+                reboot -f 2>/dev/null || poweroff -f 2>/dev/null || true
+            fi
+            return "$_rc"
+            ;;
+        *) dur_err "state: unknown subcommand '$_sub'"; return 1 ;;
+    esac
+}
+
+cmd_recovery() {
+    local _allow _dir _force _mode _reboot _slot _sub _yes
+    _sub=${1:-}
+    shift || true
+    case "$_sub" in
+        status) recovery_status ;;
+        inspect) backend_init || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }; recovery_inspect ;;
+        select)
+            _slot=${1:-}; [ -n "$_slot" ] || { dur_err "recovery select: missing slot"; return 1; }
+            _force=0
+            [ "${2:-}" = "--force" ] && _force=1
+            recovery_select "$_slot" "$_force"
+            ;;
+        mark-good)
+            recovery_set_good "${1:-}"
+            ;;
+        mark-bad)
+            recovery_set_bad "${1:-}"
+            ;;
+        reinstall)
+            _slot=""; _dir=""; _allow=0; _reboot=0
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    --slot) _slot=${2:-}; shift 2 ;;
+                    --artifact) _dir=${2:-}; shift 2 ;;
+                    --allow-profile-mismatch) _allow=1; shift ;;
+                    --reboot) _reboot=1; shift ;;
+                    *) dur_err "recovery reinstall: unknown option $1"; return 1 ;;
+                esac
+            done
+            [ -n "$_slot" ] && [ -n "$_dir" ] || { dur_err "recovery reinstall: --slot and --artifact are required"; return 1; }
+            backend_init || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
+            recovery_reinstall "$_slot" "$_dir" "$_allow" "$_reboot"
+            ;;
+        repair-boot) recovery_repair_boot ;;
+        mount-state)
+            backend_init || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
+            recovery_mount_state
+            ;;
+        umount-state)
+            backend_init || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
+            recovery_umount_state
+            ;;
+        factory-reset)
+            _mode=""; _yes=0
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    --mode) _mode=${2:-}; shift 2 ;;
+                    --yes) _yes=1; shift ;;
+                    *) dur_err "recovery factory-reset: unknown option $1"; return 1 ;;
+                esac
+            done
+            [ -n "$_mode" ] || { dur_err "recovery factory-reset: --mode is required"; return 1; }
+            backend_init || { dur_err "$DURANIUM_LAST_ERROR"; return 1; }
+            recovery_factory_reset "$_mode" "$_yes"
+            ;;
+        *) dur_err "recovery: unknown subcommand '$_sub'"; return 1 ;;
+    esac
+}
+
+cmd_slot() {
+    local _force _s _sub
+    _sub=${1:-}
+    shift || true
+    case "$_sub" in
+        list)
+            for _s in A B; do meta_slot_summary "$_s" || true; done
+            ;;
+        show)
+            _s=${1:-}; dur_is_slot "$_s" || { dur_err "slot show: invalid slot"; return 1; }
+            meta_slot_summary "$_s"
+            ;;
+        select)
+            _s=${1:-}; _force=0
+            [ "${2:-}" = "--force" ] && _force=1
+            slot_select "$_s" "$_force"
+            ;;
+        *) dur_err "slot: unknown subcommand '$_sub'"; return 1 ;;
+    esac
+}
+
+# Main dispatch. Keep option parsing intentionally small and explicit.
+if [ "${1:-}" = "--config" ]; then
+    DURANIUM_CONFIG=${2:-}
+    export DURANIUM_CONFIG
+    shift 2
+fi
+
+_cmd=${1:-help}
+[ "$#" -gt 0 ] && shift
+case "$_cmd" in
+    version|--version|-V) printf 'duranium %s\n' "$DURANIUM_VERSION" ;;
+    status) slot_status ;;
+    health)
+        _sub=${1:-check}
+        case "$_sub" in
+            check) health_check ;;
+            report) health_report ;;
+            *) dur_err "health: unknown subcommand '$_sub'"; exit 1 ;;
+        esac
+        ;;
+    slot) cmd_slot "$@" ;;
+    mark-good) slot_mark_good "${1:-}" ;;
+    mark-bad) slot_mark_bad "${1:-}" ;;
+    boot-record)
+        [ -n "${1:-}" ] || { dur_err "boot-record: missing slot"; exit 1; }
+        slot_boot_record "$1"
+        ;;
+    boot-confirm) slot_boot_confirm "${1:-}" ;;
+    session-confirm) slot_session_confirm "${1:-}" ;;
+    session-crash) slot_session_crash "$*" ;;
+    boot-clean) slot_boot_clean ;;
+    boot-reconcile) slot_reconcile ;;
+    boot-verify)
+        [ -n "${1:-}" ] || { dur_err "boot-verify: missing slot"; exit 1; }
+        slot_boot_verify "$1" || { dur_err "$DURANIUM_LAST_ERROR"; exit 1; }
+        ;;
+    boot-fail)
+        [ -n "${1:-}" ] || { dur_err "boot-fail: missing slot"; exit 1; }
+        slot_boot_fail "$1" "${2:-boot failure}"
+        _rc=$?
+        [ "$_rc" -eq 0 ] || exit "$_rc"
+        ;;
+    update) cmd_update "$@" ;;
+    manifest) cmd_manifest "$@" ;;
+    state) cmd_state "$@" ;;
+    recovery) cmd_recovery "$@" ;;
+    bootloader)
+        _sub=${1:-list}
+        case "$_sub" in
+            list) bootloader_list ;;
+            sync) bootloader_sync ;;
+            fake-boot)
+                [ "$DURANIUM_TEST_MODE" = "1" ] || { dur_err "bootloader fake-boot is test-only"; exit 1; }
+                bootloader_fake_boot
+                ;;
+            *) dur_err "bootloader: unknown subcommand '$_sub'"; exit 1 ;;
+        esac
+        ;;
+    admin)
+        _sub=${1:-}
+        shift || true
+        case "$_sub" in
+            init-slot)
+                _slot=${1:-}; shift || true
+                meta_init_slot "$_slot" "$@"
+                ;;
+            init-global)
+                meta_init_global "$@"
+                ;;
+            sync)
+                bootloader_sync
+                ;;
+            *) dur_err "admin: unknown subcommand '$_sub'"; exit 1 ;;
+        esac
+        ;;
+    initramfs-main)
+        initramfs_main
+        ;;
+    help|--help|-h) usage ;;
+    *) dur_err "unknown command: $_cmd"; usage >&2; exit 1 ;;
+esac

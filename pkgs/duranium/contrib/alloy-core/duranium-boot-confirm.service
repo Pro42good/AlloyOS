@@ -1,0 +1,17 @@
+[Unit]
+Description=Duranium boot confirmation by the booted OS
+Documentation=file:///usr/share/duranium/docs/03-BOOT-SELECTION.md
+# Ordered only against the pre-multi-user Duranium units. Do NOT put
+# After=multi-user.target here: with WantedBy=multi-user.target that is a
+# self-cycle, which systemd resolves by dropping an edge and can leave this
+# confirmation unrun.
+After=duranium-state-migrate.service
+ConditionPathExists=/run/duranium/boot.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/duranium boot-confirm
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,311 @@
+Duranium V1 final QEMU run: 20261117-164934
+Host: macOS Apple Silicon, QEMU HVF, EDK2 aarch64, Alpine 3.20 aarch64 container
+
+================================================================================
+SCENARIO: acceptance
+================================================================================
+--- boot-1.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=acceptance phase=0 slot=A
+DURANIUM_TEST:PASS booted slot A
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:PASS root is mounted read-only
+DURANIUM_TEST:PASS STATE is mounted
+DURANIUM_TEST:PASS clean A marker
+DURANIUM_TEST:PASS install signed update into B
+DURANIUM_TEST:PASS slot B status PENDING
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:PASS pending slot B
+DURANIUM_TEST:PASS active A device unchanged by update
+DURANIUM_TEST:PASS B boot counter present
+DURANIUM_TEST:PASS user state survives
+DURANIUM_TEST:PASS settings survive
+DURANIUM_TEST:ADVANCE phase=1
+--- boot-2.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=acceptance phase=1 slot=B
+DURANIUM_TEST:PASS booted slot B
+DURANIUM_TEST:PASS slot B status PENDING
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:PASS B attempts after first pending boot
+DURANIUM_TEST:PASS B root read-only
+DURANIUM_TEST:PASS STATE mounted on B
+DURANIUM_TEST:PASS user state survives
+DURANIUM_TEST:PASS settings survive
+DURANIUM_TEST:PASS ephemeral data cleared across reboot
+DURANIUM_TEST:ADVANCE phase=2
+--- boot-3.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=acceptance phase=2 slot=B
+DURANIUM_TEST:PASS booted slot B
+DURANIUM_TEST:PASS slot B status PENDING
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:PASS B attempts after second pending boot
+DURANIUM_TEST:PASS user state survives
+DURANIUM_TEST:PASS settings survive
+DURANIUM_TEST:PASS explicitly mark B GOOD
+DURANIUM_TEST:PASS slot B status GOOD
+DURANIUM_TEST:PASS active slot B
+DURANIUM_TEST:PASS fallback is A
+DURANIUM_TEST:PASS pending slot none
+DURANIUM_TEST:PASS user state survives
+DURANIUM_TEST:PASS settings survive
+DURANIUM_TEST:ADVANCE phase=3
+--- boot-4.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=acceptance phase=3 slot=B
+DURANIUM_TEST:PASS booted slot B
+DURANIUM_TEST:PASS slot B status GOOD
+DURANIUM_TEST:PASS active slot B
+DURANIUM_TEST:PASS install update into inactive A
+DURANIUM_TEST:PASS slot A status PENDING
+DURANIUM_TEST:PASS active slot B
+DURANIUM_TEST:PASS pending slot A
+DURANIUM_TEST:PASS active B device unchanged by update
+DURANIUM_TEST:PASS A boot counter present
+DURANIUM_TEST:PASS user state survives
+DURANIUM_TEST:PASS settings survive
+DURANIUM_TEST:ADVANCE phase=4
+--- boot-5.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=acceptance phase=4 slot=A
+DURANIUM_TEST:PASS booted slot A
+DURANIUM_TEST:PASS slot A status PENDING
+DURANIUM_TEST:PASS active slot B
+DURANIUM_TEST:PASS user state survives
+DURANIUM_TEST:PASS settings survive
+DURANIUM_TEST:PASS mark A GOOD
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:PASS fallback is B
+DURANIUM_TEST:PASS user state survives
+DURANIUM_TEST:PASS settings survive
+DURANIUM_TEST:PASS install broken candidate into B
+DURANIUM_TEST:PASS slot B status PENDING
+DURANIUM_TEST:PASS B pending counter
+DURANIUM_TEST:PASS destroyed B root superblock
+DURANIUM_TEST:ADVANCE phase=5
+--- boot-6.log ---
+--- boot-7.log ---
+--- boot-8.log ---
+--- boot-9.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=acceptance phase=5 slot=A
+DURANIUM_TEST:PASS booted slot A
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS slot B status BAD
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:PASS pending cleared after rollback
+DURANIUM_TEST:PASS B attempts exhausted
+DURANIUM_TEST:PASS B counter entry removed
+DURANIUM_TEST:PASS user state survives
+DURANIUM_TEST:PASS settings survive
+DURANIUM_TEST:PASS A version after update
+DURANIUM_TEST:DONE
+
+================================================================================
+SCENARIO: corrupt-boot
+================================================================================
+--- boot-1.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=corrupt-boot phase=0 slot=A
+DURANIUM_TEST:PASS booted slot A
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:PASS install valid update into B
+DURANIUM_TEST:PASS slot B status PENDING
+DURANIUM_TEST:PASS B pending entry present
+DURANIUM_TEST:PASS corrupted B kernel
+DURANIUM_TEST:ADVANCE phase=1
+--- boot-2.log ---
+--- boot-3.log ---
+--- boot-4.log ---
+--- boot-5.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=corrupt-boot phase=1 slot=A
+DURANIUM_TEST:PASS booted slot A
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS slot B status BAD
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:PASS pending cleared after corrupted-boot fallback
+DURANIUM_TEST:PASS B attempts exhausted
+DURANIUM_TEST:PASS seed settings present
+DURANIUM_TEST:PASS seed user file present
+DURANIUM_TEST:PASS B counter entry removed
+DURANIUM_TEST:DONE
+
+================================================================================
+SCENARIO: failures
+================================================================================
+--- boot-1.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=failures phase=0 slot=A
+DURANIUM_TEST:PASS booted slot A
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:PASS tampered payload rejected
+DURANIUM_TEST:PASS tampered manifest rejected
+DURANIUM_TEST:PASS untrusted key rejected
+DURANIUM_TEST:PASS wrong profile rejected
+DURANIUM_TEST:PASS wrong architecture rejected
+DURANIUM_TEST:PASS wrong hardware rejected
+DURANIUM_TEST:PASS injected write failure rejected
+DURANIUM_TEST:PASS injected read-back failure rejected
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:PASS active A unchanged after rejected updates
+DURANIUM_TEST:PASS no pending slot after failures
+DURANIUM_TEST:PASS seed settings present
+DURANIUM_TEST:PASS seed user file present
+DURANIUM_TEST:PASS update process died during write (rc=137)
+DURANIUM_TEST:PASS interrupted transaction recorded
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:ADVANCE phase=1
+--- boot-2.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=failures phase=1 slot=A
+DURANIUM_TEST:PASS booted slot A
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS slot B status BAD
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:PASS reconciliation cleared pending
+DURANIUM_TEST:PASS B has no attempts
+DURANIUM_TEST:PASS seed settings present
+DURANIUM_TEST:PASS seed user file present
+DURANIUM_TEST:DONE
+
+================================================================================
+SCENARIO: recovery-a
+================================================================================
+--- boot-1.log ---
+DURANIUM_TEST:BOOT mode=recovery scenario=recovery phase=0 slot=RECOVERY
+DURANIUM_TEST:PASS recovery marker
+DURANIUM_TEST:PASS STATE is mounted in recovery
+DURANIUM_TEST:PASS seed settings visible in recovery
+DURANIUM_TEST:PASS seed user visible in recovery
+DURANIUM_TEST:PASS slot A status BAD
+DURANIUM_TEST:PASS B is not GOOD
+DURANIUM_TEST:PASS repair boot metadata
+DURANIUM_TEST:PASS reinstall A from signed artifact
+DURANIUM_TEST:PASS slot A status PENDING
+DURANIUM_TEST:PASS STATE survives reinstall
+DURANIUM_TEST:PASS user STATE survives reinstall
+DURANIUM_TEST:ADVANCE phase=1
+--- boot-2.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=recovery phase=1 slot=A
+DURANIUM_TEST:PASS booted slot A
+DURANIUM_TEST:PASS slot A status PENDING
+DURANIUM_TEST:PASS STATE schema migrated to 2
+DURANIUM_TEST:PASS STATE settings survive boot
+DURANIUM_TEST:PASS STATE user data survives boot
+DURANIUM_TEST:PASS mark A GOOD after recovery
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:DONE
+
+================================================================================
+SCENARIO: recovery-both
+================================================================================
+--- boot-1.log ---
+DURANIUM_TEST:BOOT mode=recovery scenario=recovery phase=0 slot=RECOVERY
+DURANIUM_TEST:PASS recovery marker
+DURANIUM_TEST:PASS STATE is mounted in recovery
+DURANIUM_TEST:PASS seed settings visible in recovery
+DURANIUM_TEST:PASS seed user visible in recovery
+DURANIUM_TEST:PASS slot A status BAD
+DURANIUM_TEST:PASS B is not GOOD
+DURANIUM_TEST:PASS repair boot metadata
+DURANIUM_TEST:PASS reinstall A from signed artifact
+DURANIUM_TEST:PASS slot A status PENDING
+DURANIUM_TEST:PASS STATE survives reinstall
+DURANIUM_TEST:PASS user STATE survives reinstall
+DURANIUM_TEST:ADVANCE phase=1
+--- boot-2.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=recovery phase=1 slot=A
+DURANIUM_TEST:PASS booted slot A
+DURANIUM_TEST:PASS slot A status PENDING
+DURANIUM_TEST:PASS STATE schema migrated to 2
+DURANIUM_TEST:PASS STATE settings survive boot
+DURANIUM_TEST:PASS STATE user data survives boot
+DURANIUM_TEST:PASS mark A GOOD after recovery
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:DONE
+
+================================================================================
+SCENARIO: recovery-mixed
+================================================================================
+--- boot-1.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=recovery-mixed phase=0 slot=A
+DURANIUM_TEST:PASS booted slot A
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS B is not bootable
+DURANIUM_TEST:PASS seed settings present
+DURANIUM_TEST:PASS seed user file present
+DURANIUM_TEST:REQUEST_CORRUPT_A
+--- boot-2.log ---
+DURANIUM_TEST:BOOT mode=recovery scenario=recovery-mixed phase=1 slot=RECOVERY
+DURANIUM_TEST:PASS recovery marker
+DURANIUM_TEST:PASS STATE is mounted in recovery
+DURANIUM_TEST:PASS slot A status BAD
+DURANIUM_TEST:PASS B is not GOOD
+DURANIUM_TEST:PASS seed settings visible in recovery
+DURANIUM_TEST:PASS repair boot metadata
+DURANIUM_TEST:PASS reinstall A preserving STATE
+DURANIUM_TEST:PASS slot A status PENDING
+DURANIUM_TEST:PASS STATE survives reinstall
+DURANIUM_TEST:ADVANCE phase=2
+--- boot-3.log ---
+DURANIUM_TEST:BOOT mode=normal scenario=recovery-mixed phase=2 slot=A
+DURANIUM_TEST:PASS booted slot A
+DURANIUM_TEST:PASS slot A status PENDING
+DURANIUM_TEST:PASS STATE schema is 2
+DURANIUM_TEST:PASS STATE user data survives
+DURANIUM_TEST:PASS mark A GOOD after recovery
+DURANIUM_TEST:PASS slot A status GOOD
+DURANIUM_TEST:PASS active slot A
+DURANIUM_TEST:DONE
+
+================================================================================
+FINAL RUNNER OUTPUT
+================================================================================
+Duranium QEMU suite
+fixture:  /Users/pro42good/Documents/gihhub/AlloyOS/pkgs/duranium/qemu/out/duranium-fixture.img
+testdata: /Users/pro42good/Documents/gihhub/AlloyOS/pkgs/duranium/qemu/out/testdata.img
+runs:     /Users/pro42good/Documents/gihhub/AlloyOS/pkgs/duranium/qemu/out/runs/20261117-164934
+
+== scenario: acceptance ==
+debugfs 1.47.0 (5-Feb-2023)
+  boot 1/14 ... retry (rc=0)
+  boot 2/14 ... retry (rc=0)
+  boot 3/14 ... retry (rc=0)
+  boot 4/14 ... retry (rc=0)
+  boot 5/14 ... retry (rc=0)
+  boot 6/14 ... retry (rc=0)
+  boot 7/14 ... retry (rc=0)
+  boot 8/14 ... retry (rc=0)
+  boot 9/14 ... DONE
+
+== scenario: failures ==
+debugfs 1.47.0 (5-Feb-2023)
+  boot 1/6 ... retry (rc=0)
+  boot 2/6 ... DONE
+
+== scenario: recovery ==
+debugfs 1.47.0 (5-Feb-2023)
+  boot 1/6 ... retry (rc=0)
+  boot 2/6 ... DONE
+
+== scenario: recovery ==
+debugfs 1.47.0 (5-Feb-2023)
+  boot 1/6 ... retry (rc=0)
+  boot 2/6 ... DONE
+
+== scenario: recovery-mixed ==
+debugfs 1.47.0 (5-Feb-2023)
+  boot 1/8 ... request corrupt A
+  boot 2/8 ... retry (rc=0)
+  boot 3/8 ... DONE
+
+== scenario: corrupt-boot ==
+debugfs 1.47.0 (5-Feb-2023)
+  boot 1/10 ... retry (rc=0)
+  boot 2/10 ... retry (rc=0)
+  boot 3/10 ... retry (rc=0)
+  boot 4/10 ... retry (rc=0)
+  boot 5/10 ... DONE
+
+QEMU SUMMARY: 6 passed, 0 failed
+logs: /Users/pro42good/Documents/gihhub/AlloyOS/pkgs/duranium/qemu/out/runs/20261117-164934

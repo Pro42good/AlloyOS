@@ -1,0 +1,23 @@
+[Unit]
+Description=Duranium explicit mark-good after health checks
+Documentation=file:///usr/share/duranium/docs/03-BOOT-SELECTION.md
+# Order after boot-confirm (mark-good requires confirmed=1), the pre-multi-user
+# Duranium units, and the session gate. Ordering against session-confirm is
+# vacuous on headless images where it is never queued, so mark-good still runs
+# at multi-user there.
+After=duranium-boot-confirm.service duranium-state-migrate.service duranium-session-confirm.service
+ConditionPathExists=/run/duranium/boot.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/duranium mark-good
+# A oneshot must not give up on the first attempt: with the sign-in gate
+# enabled, mark-good legitimately fails until the user signs in (and health
+# checks can transiently fail late in boot). Retry so the pending slot is
+# confirmed once the gates pass instead of burning its boot attempts.
+Restart=on-failure
+RestartSec=30s
+TimeoutStartSec=2min
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,60 @@
+# Maintainer: Alloy OS
+pkgname=duranium
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Immutable A/B system update foundation for Alloy OS"
+url="https://github.com/Pro42good/AlloyOS"
+arch="all"
+license="MIT"
+depends="busybox openssl e2fsprogs util-linux"
+makedepends=""
+source=""
+builddir="$srcdir"
+
+package() {
+    install -Dm755 "$startdir/src/bin/duranium" \
+        "$pkgdir/usr/bin/duranium"
+
+    for f in "$startdir"/src/lib/*.sh; do
+        install -Dm644 "$f" "$pkgdir/usr/lib/duranium/$(basename "$f")"
+    done
+
+    install -Dm644 "$startdir/src/etc/duranium.conf" \
+        "$pkgdir/etc/duranium/duranium.conf"
+    install -Dm644 "$startdir/src/etc/state.conf" \
+        "$pkgdir/etc/duranium/state.conf"
+    install -Dm644 "$startdir/src/etc/profile" \
+        "$pkgdir/etc/duranium/profile"
+    install -Dm644 "$startdir/src/etc/hardware-target" \
+        "$pkgdir/etc/duranium/hardware-target"
+    install -Dm644 "$startdir/src/etc/state-schema" \
+        "$pkgdir/etc/duranium/state-schema"
+    install -Dm644 "$startdir/src/etc/health.d/10-core.sh" \
+        "$pkgdir/etc/duranium/health.d/10-core.sh"
+
+    install -Dm755 "$startdir/src/initramfs/init" \
+        "$pkgdir/usr/share/duranium/initramfs/init"
+    install -Dm644 "$startdir/src/etc/initramfs.conf" \
+        "$pkgdir/usr/share/duranium/initramfs/initramfs.conf"
+    install -Dm755 "$startdir/src/recovery/init" \
+        "$pkgdir/usr/share/duranium/recovery/init"
+    install -Dm755 "$startdir/src/root/sbin-init" \
+        "$pkgdir/usr/share/duranium/fixture/sbin-init"
+
+    # The runtime reads DURANIUM_MIGRATIONS_DIR (default
+    # /usr/lib/duranium/migrations, src/etc/duranium.conf). Installing the
+    # migrations elsewhere made every state migrate fail with
+    # "no migration N -> N" and marked pending slots BAD on boot.
+    install -Dm755 "$startdir/src/migrations/1-to-2.sh" \
+        "$pkgdir/usr/lib/duranium/migrations/1-to-2.sh"
+    install -Dm644 "$startdir/src/migrations/1-to-2.conf" \
+        "$pkgdir/usr/lib/duranium/migrations/1-to-2.conf"
+
+    for f in "$startdir"/docs/*.md; do
+        install -Dm644 "$f" "$pkgdir/usr/share/duranium/docs/$(basename "$f")"
+    done
+    for f in "$startdir"/contrib/alloy-core/*; do
+        install -Dm644 "$f" \
+            "$pkgdir/usr/share/duranium/contrib/alloy-core/$(basename "$f")"
+    done
+}

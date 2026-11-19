@@ -1,0 +1,18 @@
+[Unit]
+Description=Duranium sign-in (session) confirmation gate
+Documentation=file:///usr/share/duranium/docs/03-BOOT-SELECTION.md
+# Reference implementation. The real desktop gate should run in the user
+# session (systemd --user unit, After=graphical-session.target) or be
+# triggered by the sign-in manager once the user environment is actually
+# up - the point of the gate is that it fires AFTER sign-in, not merely
+# after graphical.target. Enable DURANIUM_REQUIRE_SESSION=1 on desktop
+# images so mark-good refuses pending slots that were never signed in.
+After=graphical.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/duranium session-confirm
+RemainAfterExit=yes
+
+[Install]
+WantedBy=graphical.target

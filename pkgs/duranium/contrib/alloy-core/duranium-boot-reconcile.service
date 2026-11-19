@@ -1,0 +1,14 @@
+[Unit]
+Description=Duranium boot metadata reconciliation
+DefaultDependencies=no
+After=local-fs.target
+Before=multi-user.target
+ConditionPathExists=/boot/duranium/global.meta
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/duranium boot-reconcile
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
