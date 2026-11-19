@@ -442,7 +442,13 @@ sed 's/^profile=.*/profile=lab/' "$TD/artifacts/b-v2/manifest.txt" > "$TD/artifa
 "$SRC/src/bin/duranium" manifest sign "$TD/artifacts/wrong-profile" "$TESTKEY"
 
 copy_variant "$TD/artifacts/b-v2" "$TD/artifacts/wrong-arch"
-sed 's/^architecture=.*/architecture=x86_64/' "$TD/artifacts/b-v2/manifest.txt" > "$TD/artifacts/wrong-arch/manifest.txt"
+# "Wrong" is relative to the fixture architecture: use an arch the fixture
+# is NOT (aarch64 fixtures get x86_64 and vice versa).
+case "$ARCH" in
+    x86_64) WRONG_ARCH=aarch64 ;;
+    *) WRONG_ARCH=x86_64 ;;
+esac
+sed "s/^architecture=.*/architecture=$WRONG_ARCH/" "$TD/artifacts/b-v2/manifest.txt" > "$TD/artifacts/wrong-arch/manifest.txt"
 "$SRC/src/bin/duranium" manifest sign "$TD/artifacts/wrong-arch" "$TESTKEY"
 
 copy_variant "$TD/artifacts/b-v2" "$TD/artifacts/wrong-hardware"
