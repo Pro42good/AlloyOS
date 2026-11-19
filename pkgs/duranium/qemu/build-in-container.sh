@@ -77,7 +77,17 @@ if [ -n "${DURANIUM_KERNEL:-}" ] && [ -r "${DURANIUM_KERNEL:-}" ]; then
     cp "$DURANIUM_KERNEL" "$W/vmlinuz"
     [ -n "${DURANIUM_EFI_BOOT:-}" ] && [ -r "${DURANIUM_EFI_BOOT:-}" ] && cp "$DURANIUM_EFI_BOOT" "$W/$SB_EFI"
 fi
-if [ ! -s "$W/vmlinuz" ] || [ ! -s "$W/$SB_EFI" ]; then
+if [ "$ARCH" = "x86_64" ]; then
+    # There is no x86_64 baseline. Prefer an explicitly provided kernel
+    # (DURANIUM_KERNEL); otherwise fetch Alpine's linux-virt, which builds
+    # in virtio, ext4 and vfat - distro kernels commonly ship those as
+    # modules, which the minimal initramfs cannot load.
+    if [ ! -s "$W/vmlinuz" ]; then
+        apk add -q linux-virt >/dev/null 2>&1 || die "cannot fetch linux-virt for the x86_64 fixture"
+        cp /boot/vmlinuz-virt "$W/vmlinuz"
+    fi
+    [ -s "$W/$SB_EFI" ] || die "x86_64 fixture requires DURANIUM_EFI_BOOT (systemd-bootx64.efi)"
+elif [ ! -s "$W/vmlinuz" ] || [ ! -s "$W/$SB_EFI" ]; then
     _base=""
     if [ -r "$BASELINE/alloy-1001-floor.qcow2" ]; then
         _base="$BASELINE/alloy-1001-floor.qcow2"
@@ -90,18 +100,6 @@ fi
 [ -s "$W/vmlinuz" ] || die "kernel extraction failed"
 [ -s "$W/$SB_EFI" ] || die "systemd-boot extraction failed"
 log "kernel: $(wc -c < "$W/vmlinuz") bytes; systemd-boot: $(wc -c < "$W/$SB_EFI") bytes"
-
-if [ "$ARCH" = "x86_64" ]; then
-    # There is no x86_64 baseline. Prefer an explicitly provided kernel
-    # (DURANIUM_KERNEL); otherwise fetch Alpine's linux-virt, which builds
-    # in virtio, ext4 and vfat - distro kernels commonly ship those as
-    # modules, which the minimal initramfs cannot load.
-    if [ ! -s "$W/vmlinuz" ]; then
-        apk add -q linux-virt >/dev/null 2>&1 || die "cannot fetch linux-virt for the x86_64 fixture"
-        cp /boot/vmlinuz-virt "$W/vmlinuz"
-    fi
-    [ -s "$W/$SB_EFI" ] || die "x86_64 fixture requires DURANIUM_EFI_BOOT (systemd-bootx64.efi)"
-fi
 
 # ---------------------------------------------------------------------------
 # Keys and artifacts
