@@ -74,7 +74,7 @@ set_scenario() {
             debugfs -w -R 'write /tmp/scenario /scenario' /stage/testdata.img >/dev/null 2>&1
             sync" < "$TESTDATA" || return 1
     else
-        docker run --rm -v "$OUT:/out" --platform linux/arm64 alpine:3.20 sh -c "
+        docker run --rm ${DURANIUM_DOCKER_ARGS:-} --dns 9.9.9.9 --dns 1.1.1.1 -v "$OUT:/out" --platform linux/arm64 alpine:3.20 sh -c "
             apk add -q e2fsprogs e2fsprogs-extra >/dev/null 2>&1
             debugfs -w -R 'rm /scenario' /out/testdata.img >/dev/null 2>&1 || true
             printf '%s\n' '$_name' > /tmp/scenario
