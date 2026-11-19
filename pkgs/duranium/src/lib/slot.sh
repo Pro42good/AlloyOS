@@ -802,14 +802,15 @@ slot_select() {
             return 1
         fi
         # Force is an operator decision made from recovery, and it is only
-        # meaningful for a PENDING slot: BAD/UNKNOWN slots get no boot entry
-        # from bootloader_sync, so "succeeding" would silently change nothing.
+        # meaningful for a slot with trusted content: re-arm it as a fresh
+        # pending transaction (fresh attempts, pending pointer, new +N
+        # entry). UNKNOWN slots have no trusted image and stay refused.
         recovery_require_context || {
             dur_err "select: --force is only available in the recovery environment"
             return 1
         }
         case "$MS_status" in
-            PENDING) ;;
+            PENDING|BAD) ;;
             *) dur_err "select: cannot force-select a $MS_status slot"; return 1 ;;
         esac
     fi
