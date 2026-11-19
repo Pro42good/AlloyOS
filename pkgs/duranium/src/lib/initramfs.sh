@@ -19,7 +19,7 @@ initramfs_load_modules() {
     # order matters: busybox insmod does not resolve dependencies, and
     # vfat requires the nls codepages and fat first.
     local _m
-    for _m in virtio_blk nls_cp437 nls_ascii nls_utf8 fat vfat; do
+    for _m in virtio_blk nls_cp437 nls_ascii nls_utf8 fat vfat crc16 mbcache jbd2 ext4; do
         if [ -e "/modules/$_m.ko" ]; then
             if ! insmod "/modules/$_m.ko" 2>/dev/null; then
                 printf 'duranium: warning: insmod %s failed\n' "$_m" >&2
