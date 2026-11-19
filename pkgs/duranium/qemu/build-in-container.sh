@@ -92,10 +92,14 @@ fi
 log "kernel: $(wc -c < "$W/vmlinuz") bytes; systemd-boot: $(wc -c < "$W/$SB_EFI") bytes"
 
 if [ "$ARCH" = "x86_64" ]; then
-    # No x86_64 baseline exists; the kernel and boot manager must be
-    # provided explicitly (e.g. the host distro kernel and Debian's
-    # systemd-boot-efi package).
-    [ -s "$W/vmlinuz" ] || die "x86_64 fixture requires DURANIUM_KERNEL"
+    # There is no x86_64 baseline. Prefer an explicitly provided kernel
+    # (DURANIUM_KERNEL); otherwise fetch Alpine's linux-virt, which builds
+    # in virtio, ext4 and vfat - distro kernels commonly ship those as
+    # modules, which the minimal initramfs cannot load.
+    if [ ! -s "$W/vmlinuz" ]; then
+        apk add -q linux-virt >/dev/null 2>&1 || die "cannot fetch linux-virt for the x86_64 fixture"
+        cp /boot/vmlinuz-virt "$W/vmlinuz"
+    fi
     [ -s "$W/$SB_EFI" ] || die "x86_64 fixture requires DURANIUM_EFI_BOOT (systemd-bootx64.efi)"
 fi
 
