@@ -99,9 +99,11 @@ fi
 
 case "$(uname -s)" in
     Linux)
-        if [ -w /dev/kvm ]; then
+        if [ -w /dev/kvm ] && [ "$(uname -m)" = "aarch64" ]; then
             ACCEL_ARGS="-accel kvm -cpu host"
         else
+            # KVM cannot emulate a foreign architecture: x86_64 hosts run
+            # the aarch64 guest under TCG.
             ACCEL_ARGS="-accel tcg -cpu cortex-a72"
         fi
         ;;
